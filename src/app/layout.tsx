@@ -38,6 +38,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ko" className="dark">
       <head>
+        {/* Prevent browser HTTP cache from serving stale chunks after
+            every deploy. Service workers are already disabled on subpath
+            deployments, but plain HTTP cache still holds onto chunks for
+            up to 10 minutes — this forces a re-fetch on every page load. */}
+        <meta httpEquiv="cache-control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="pragma" content="no-cache" />
+        <meta httpEquiv="expires" content="0" />
         {/* basePath-aware base href so client-side fetch helpers can derive
             the deployment subpath even when __NEXT_DATA__.basePath is missing. */}
         <base href={BASE_PATH + '/'} />

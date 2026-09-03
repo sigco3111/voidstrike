@@ -74,15 +74,21 @@ function rewrite(file) {
   let src = fs.readFileSync(file, 'utf8');
   const original = src;
   for (const prefix of PROTECTED_PREFIXES) {
-    // Replace /audio/... with /voidstrike/audio/...
-    // But NOT if it's already /voidstrike/audio/... (idempotent).
-    const re = new RegExp(`(?<!${BASE})\\${prefix}`, 'g');
+    // Pattern: replace /prefix/ with /voidstrike/prefix/
+    // Skip if already preceded by /voidstrike (no double-prefix).
+    // Also skip if preceded by another basePath-like prefix (idempotent
+    // across builds). Lookbehind keeps regex O(n) and safe.
+    const re = new RegExp(`(?<![a-zA-Z0-9_/-])${escapeRegExp(prefix)}`, 'g');
     src = src.replace(re, `${BASE}${prefix}`);
   }
   if (src !== original) {
     fs.writeFileSync(file, src, 'utf8');
     console.log(`  rewrote ${path.relative(OUT_DIR, file)}`);
   }
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 if (!fs.existsSync(OUT_DIR)) {
