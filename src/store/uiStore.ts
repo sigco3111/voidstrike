@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { debugInitialization } from '@/utils/debugLogger';
 import { clamp } from '@/utils/math';
+import { withBasePath } from '@/utils/basePath';
 
 export type ScreenType = 'main-menu' | 'game' | 'lobby' | 'loading' | 'settings';
 export type NotificationType = 'info' | 'warning' | 'error' | 'success';
@@ -947,7 +948,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     if (state.graphicsPresetsLoaded) return;
 
     try {
-      const response = await fetch('/config/graphics-presets.json');
+      const response = await fetch(withBasePath('/config/graphics-presets.json'));
       if (!response.ok) {
         debugInitialization.warn('Failed to load graphics presets, using defaults');
         return;

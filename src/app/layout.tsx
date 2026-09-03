@@ -2,6 +2,13 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 
+// basePath-aware icons — needed for Next.js metadata + manual <link> tags.
+// On GitHub Pages subpath (e.g. /voidstrike/), absolute '/icon-...' URLs
+// would 404 because the PWA Service Worker is disabled on subpath
+// deployments and our app assets live under /voidstrike/.
+const BASE_PATH = process.env.NODE_ENV === 'production' ? '/voidstrike' : '';
+const icon = (size: string) => `${BASE_PATH}/icon-${size}.png`;
+
 export const metadata: Metadata = {
   title: 'VOIDSTRIKE - 브라우저 RTS',
   description:
@@ -9,10 +16,10 @@ export const metadata: Metadata = {
   keywords: ['RTS', '전략', '게임', '브라우저', '멀티플레이어', '경쟁'],
   icons: {
     icon: [
-      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+      { url: icon('192x192'), sizes: '192x192', type: 'image/png' },
+      { url: icon('512x512'), sizes: '512x512', type: 'image/png' },
     ],
-    apple: [{ url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' }],
+    apple: [{ url: icon('192x192'), sizes: '192x192', type: 'image/png' }],
   },
   appleWebApp: {
     capable: true,
@@ -37,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@400;500;600;700;800;900&display=swap"
           rel="stylesheet"
         />
-        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+        <link rel="apple-touch-icon" href={icon('192x192')} />
       </head>
       <body className="font-sans bg-black text-white antialiased">
         <ServiceWorkerRegistrar />

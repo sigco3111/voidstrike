@@ -21,6 +21,7 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { debugAssets } from '@/utils/debugLogger';
+import { withBasePath } from '@/utils/basePath';
 import { gltfWorkerManager } from './GLTFWorkerManager';
 
 // Reference Frame Contract Constants
@@ -1820,7 +1821,7 @@ export class AssetManager {
     }
 
     try {
-      const response = await fetch('/config/assets.json');
+      const response = await fetch(withBasePath('/config/assets.json'));
       if (!response.ok) {
         debugAssets.warn('[AssetManager] Could not load assets.json, using defaults');
         return null;

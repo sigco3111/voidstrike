@@ -25,6 +25,7 @@ import {
   type GameSpeed,
 } from '@/store/gameSetupStore';
 import { useMultiplayerStore } from '@/store/multiplayerStore';
+import { withBasePath } from '@/utils/basePath';
 import {
   CommandSigningManager,
   getCommandSigningManager,
@@ -87,7 +88,7 @@ async function loadIceServers(): Promise<RTCIceServer[]> {
   if (cachedIceServers) return cachedIceServers;
 
   try {
-    const response = await fetch('/data/networking.json');
+    const response = await fetch(withBasePath('/data/networking.json'));
     if (response.ok) {
       const config = await response.json();
       if (Array.isArray(config.iceServers) && config.iceServers.length > 0) {

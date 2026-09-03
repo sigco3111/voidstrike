@@ -7,6 +7,7 @@
  */
 
 import { debugInitialization } from '@/utils/debugLogger';
+import { withBasePath } from '@/utils/basePath';
 
 // ============================================================================
 // COLLISION CONFIG TYPES
@@ -155,7 +156,7 @@ class CollisionConfigLoader {
 
   private async doLoad(): Promise<void> {
     try {
-      const response = await fetch('/config/collision.config.json');
+      const response = await fetch(withBasePath('/config/collision.config.json'));
       if (!response.ok) {
         debugInitialization.warn(
           '[CollisionConfig] Failed to load collision.config.json, using defaults'

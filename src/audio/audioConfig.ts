@@ -6,6 +6,8 @@
  * sounds, music, and voice lines without touching code.
  */
 
+import { withBasePath } from '@/utils/basePath';
+
 // ============================================================================
 // MUSIC CONFIG TYPES
 // ============================================================================
@@ -116,9 +118,9 @@ class AudioConfigLoader {
 
   private async doLoad(): Promise<void> {
     const [musicRes, soundsRes, voicesRes] = await Promise.all([
-      fetch('/audio/music.config.json'),
-      fetch('/audio/sounds.config.json'),
-      fetch('/audio/voices.config.json'),
+      fetch(withBasePath('/audio/music.config.json')),
+      fetch(withBasePath('/audio/sounds.config.json')),
+      fetch(withBasePath('/audio/voices.config.json')),
     ]);
 
     if (!musicRes.ok) {

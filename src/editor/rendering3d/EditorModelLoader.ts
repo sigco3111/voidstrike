@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { debugAssets } from '@/utils/debugLogger';
+import { withBasePath } from '@/utils/basePath';
 
 // Model configuration loaded from assets.json
 export interface ModelConfig {
@@ -63,7 +64,7 @@ async function loadAssetConfig(): Promise<void> {
   if (configLoaded) return;
 
   try {
-    const response = await fetch('/config/assets.json');
+    const response = await fetch(withBasePath('/config/assets.json'));
     if (!response.ok) {
       debugAssets.warn('[EditorModelLoader] assets.json not found, using fallback');
       return;
