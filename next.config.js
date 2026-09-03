@@ -11,6 +11,14 @@ const nextConfig = {
   basePath: '/voidstrike',
   trailingSlash: false,
 
+  // Make basePath available at runtime to client-side fetch helpers.
+  // Without this, src/utils/basePath.ts falls back to <base href> parsing,
+  // but having both belt-and-suspenders keeps the deployment subpath
+  // visible everywhere (including chunks that getTreeShake-passed).
+  env: {
+    NEXT_PUBLIC_BASE_PATH: '/voidstrike',
+  },
+
   // Note: custom headers (COOP/COEP) are NOT applied with output: export.
   // GitHub Pages cannot set Cross-Origin headers, so SharedArrayBuffer
   // is unavailable — Recast Navigation WASM will fall back to single-threaded mode

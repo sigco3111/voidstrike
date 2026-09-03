@@ -38,6 +38,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ko" className="dark">
       <head>
+        {/* basePath-aware base href so client-side fetch helpers can derive
+            the deployment subpath even when __NEXT_DATA__.basePath is missing. */}
+        <base href={BASE_PATH + '/'} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

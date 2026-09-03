@@ -1,50 +1,24 @@
 /**
- * Returns the deployment basePath (e.g. '/voidstrike' on GitHub Pages subpath
- * deployments, '' on root domains). Computed once and cached.
+ * Deployment basePath helpers — derive the GitHub Pages subpath
+ * (e.g. '/voidstrike') so absolute-path fetch() calls inside the client
+ * code can be prefixed correctly.
  *
- * Works in both server and client contexts:
- *  - Server: process.env.NEXT_PUBLIC_BASE_PATH or empty
- *  - Client (browser): reads window.__NEXT_DATA__.basePath when present,
- *    else falls back to <base href> in the document, else empty.
+ * Build-time baked constant: BASE_PATH_HARDCODED below must match the
+ * basePath in next.config.js. Plain string literal (no runtime detection)
+ * so the bundler inlines it directly into every fetch call.
  *
- * Used by code that performs absolute-path fetch() calls at runtime
- * (audio configs, game data, networking config) — these bypass the
- * Next.js build-time public/ rewriting, so they need to be told
- * the deployment subpath explicitly.
+ * For root deployments, leave as empty string.
  */
-let cached: string | null = null;
 
+const BASE_PATH_HARDCODED = '/voidstrike';
+
+/** Get the deployment basePath (e.g. '/voidstrike' or ''). */
 export function getBasePath(): string {
-  if (cached !== null) return cached;
-  if (typeof window !== 'undefined') {
-    // 1) Next.js runtime data
-    const next = (window as unknown as { __NEXT_DATA__?: { basePath?: string } })
-      .__NEXT_DATA__;
-    if (next?.basePath) {
-      cached = next.basePath;
-      return cached;
-    }
-    // 2) <base href="..."> in the document head
-    const baseEl = document.querySelector('base[href]') as HTMLBaseElement | null;
-    if (baseEl?.href) {
-      try {
-        const u = new URL(baseEl.href);
-        // pathname is like "/voidstrike/" — strip trailing slash for prefix usage
-        cached = u.pathname.replace(/\/$/, '');
-        return cached;
-      } catch {
-        // ignore malformed href
-      }
-    }
-  }
-  // Server / fallback
-  cached = '';
-  return cached;
+  return BASE_PATH_HARDCODED;
 }
 
 /** Convenience: prefix a path with the deployment basePath. */
 export function withBasePath(path: string): string {
-  const bp = getBasePath();
-  if (!path.startsWith('/')) return path; // already absolute URL or relative
-  return `${bp}${path}`;
+  if (!path.startsWith('/')) return path;
+  return `${BASE_PATH_HARDCODED}${path}`;
 }
