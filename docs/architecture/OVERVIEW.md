@@ -42,10 +42,6 @@ voidstrike/
 │   ├── adapters/
 │   │   └── ZustandStateAdapter.ts
 │   ├── app/ # Next.js App Router
-│   │   ├── api/
-│   │   │   └── debug/
-│   │   │       └── pathfinding/ # Navigation & pathfinding
-│   │   │           └── ...
 │   │   ├── game/
 │   │   │   ├── setup/
 │   │   │   │   ├── editor/ # 3D Map Editor
