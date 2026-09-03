@@ -1,0 +1,91 @@
+/**
+ * VectorPool - Object pooling for temporary 2D vectors
+ *
+ * Eliminates garbage collection pressure from frequent vector allocations
+ * in tight loops (movement, combat, pathfinding).
+ *
+ * Usage:
+ *   const vec = VectorPool.acquire();
+ *   vec.x = 10; vec.y = 20;
+ *   // use vec...
+ *   VectorPool.release(vec);
+ *
+ * Or use scoped pattern:
+ *   VectorPool.withVector((vec) => {
+ *     vec.x = 10; vec.y = 20;
+ *     return vec.x + vec.y;
+ *   });
+ */
+
+export interface PooledVector2 {
+  x: number;
+  y: number;
+}
+
+const INITIAL_POOL_SIZE = 64;
+const MAX_POOL_SIZE = 256;
+
+class Vector2Pool {
+  private pool: PooledVector2[] = [];
+  private inUse = 0;
+
+  constructor() {
+    // Pre-allocate vectors
+    for (let i = 0; i < INITIAL_POOL_SIZE; i++) {
+      this.pool.push({ x: 0, y: 0 });
+    }
+  }
+
+  /**
+   * Acquire a vector from the pool.
+   * Remember to release it when done!
+   */
+  acquire(): PooledVector2 {
+    if (this.pool.length > 0) {
+      this.inUse++;
+      const vec = this.pool.pop()!;
+      vec.x = 0;
+      vec.y = 0;
+      return vec;
+    }
+    // Pool exhausted - create new (will be pooled on release)
+    this.inUse++;
+    return { x: 0, y: 0 };
+  }
+
+  /**
+   * Acquire a vector and initialize it with values.
+   */
+  acquireWith(x: number, y: number): PooledVector2 {
+    const vec = this.acquire();
+    vec.x = x;
+    vec.y = y;
+    return vec;
+  }
+
+  /**
+   * Release a vector back to the pool.
+   */
+  release(vec: PooledVector2): void {
+    if (this.pool.length < MAX_POOL_SIZE) {
+      this.pool.push(vec);
+    }
+    this.inUse--;
+  }
+
+  /**
+   * Scoped vector usage - automatically releases after callback.
+   * Use when you need a temporary vector for a quick calculation.
+   */
+  withVector<T>(callback: (vec: PooledVector2) => T): T {
+    const vec = this.acquire();
+    try {
+      return callback(vec);
+    } finally {
+      this.release(vec);
+    }
+  }
+}
+
+// Singleton instance for global use
+export const VectorPool = new Vector2Pool();

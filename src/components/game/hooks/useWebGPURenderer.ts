@@ -1,0 +1,1368 @@
+/**
+ * useWebGPURenderer Hook
+ *
+ * Handles WebGPU/WebGL renderer initialization, sub-renderer creation,
+ * and game loop management. Responsible for all Three.js scene setup and teardown.
+ */
+
+import type { MutableRefObject, RefObject } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
+import * as THREE from 'three';
+
+import { Game } from '@/engine/core/Game';
+import { PerformanceMonitor } from '@/engine/core/PerformanceMonitor';
+import { GPUTimestampProfiler } from '@/engine/core/GPUTimestampProfiler';
+import type { IWorldProvider } from '@/engine/ecs/IWorldProvider';
+import type { EventBus } from '@/engine/core/EventBus';
+import { RTSCamera } from '@/rendering/Camera';
+import { TerrainGrid } from '@/rendering/Terrain';
+import { EnvironmentManager } from '@/rendering/EnvironmentManager';
+import { loadWaterNormalsTexture } from '@/rendering/tsl/WaterMaterial';
+import { UnitRenderer } from '@/rendering/UnitRenderer';
+import { BuildingRenderer } from '@/rendering/BuildingRenderer';
+import { ResourceRenderer } from '@/rendering/ResourceRenderer';
+import {
+  BattleEffectsRenderer,
+  AdvancedParticleSystem,
+  VehicleEffectsSystem,
+} from '@/rendering/effects';
+import { RallyPointRenderer } from '@/rendering/RallyPointRenderer';
+import { WatchTowerRenderer } from '@/rendering/WatchTowerRenderer';
+import { BuildingPlacementPreview } from '@/rendering/BuildingPlacementPreview';
+import { WallPlacementPreview } from '@/rendering/WallPlacementPreview';
+import { CommandQueueRenderer } from '@/rendering/CommandQueueRenderer';
+import { LightPool } from '@/rendering/LightPool';
+
+import {
+  createWebGPURenderer,
+  attemptRecovery,
+  RenderContext,
+  RenderPipeline,
+  TSLFogOfWar,
+  TSLGameOverlayManager,
+  type DeviceLostEvent,
+} from '@/rendering/tsl';
+import {
+  initCameraMatrices,
+  setCameraMatricesBeforeRender,
+  updateCameraMatrices,
+  setMaxVertexBuffers,
+  onVelocitySetupFailed,
+} from '@/rendering/tsl/InstancedVelocity';
+
+import { AudioManager } from '@/audio/AudioManager';
+import { useUIStore, FIXED_RESOLUTIONS } from '@/store/uiStore';
+import { useGameStore } from '@/store/gameStore';
+import { useGameSetupStore, getLocalPlayerId, isSpectatorMode } from '@/store/gameSetupStore';
+import { RenderStateWorldAdapter } from '@/engine/workers/RenderStateAdapter';
+import type { WorkerBridge } from '@/engine/workers/WorkerBridge';
+import { useProjectionStore } from '@/store/projectionStore';
+import { setCameraRef } from '@/store/cameraStore';
+import { InputManager } from '@/engine/input';
+import { MapData } from '@/data/maps';
+import { Resource } from '@/engine/components/Resource';
+import { Transform } from '@/engine/components/Transform';
+import AssetManager, { DEFAULT_AIRBORNE_HEIGHT } from '@/assets/AssetManager';
+import { debugInitialization, debugPerformance, debugPostProcessing } from '@/utils/debugLogger';
+
+// Pooled Vector3 objects for combat event handlers (avoids allocation per attack/death)
+const _combatStartPos = new THREE.Vector3();
+const _combatEndPos = new THREE.Vector3();
+const _combatDirection = new THREE.Vector3();
+const _deathPos = new THREE.Vector3();
+
+export interface WebGPURendererRefs {
+  renderContext: MutableRefObject<RenderContext | null>;
+  scene: MutableRefObject<THREE.Scene | null>;
+  camera: MutableRefObject<RTSCamera | null>;
+  unitRenderer: MutableRefObject<UnitRenderer | null>;
+  buildingRenderer: MutableRefObject<BuildingRenderer | null>;
+  resourceRenderer: MutableRefObject<ResourceRenderer | null>;
+  fogOfWar: MutableRefObject<TSLFogOfWar | null>;
+  battleEffects: MutableRefObject<BattleEffectsRenderer | null>;
+  advancedParticles: MutableRefObject<AdvancedParticleSystem | null>;
+  vehicleEffects: MutableRefObject<VehicleEffectsSystem | null>;
+  rallyPointRenderer: MutableRefObject<RallyPointRenderer | null>;
+  watchTowerRenderer: MutableRefObject<WatchTowerRenderer | null>;
+  placementPreview: MutableRefObject<BuildingPlacementPreview | null>;
+  wallPlacementPreview: MutableRefObject<WallPlacementPreview | null>;
+  environment: MutableRefObject<EnvironmentManager | null>;
+  overlayManager: MutableRefObject<TSLGameOverlayManager | null>;
+  commandQueueRenderer: MutableRefObject<CommandQueueRenderer | null>;
+  lightPool: MutableRefObject<LightPool | null>;
+  renderPipeline: MutableRefObject<RenderPipeline | null>;
+}
+
+export interface UseWebGPURendererProps {
+  canvasRef: RefObject<HTMLCanvasElement | null>;
+  containerRef: RefObject<HTMLDivElement | null>;
+  gameRef: MutableRefObject<Game | null>;
+  /** Worker bridge for sending navmesh data to worker */
+  workerBridgeRef: MutableRefObject<WorkerBridge | null>;
+  /** World provider for entity queries - if provided, uses this instead of game.world */
+  worldProviderRef?: MutableRefObject<IWorldProvider | null>;
+  /** Event bus for subscribing to game events - if provided, uses this instead of game.eventBus */
+  eventBusRef?: MutableRefObject<EventBus | null>;
+  /** Function to get current game time - if provided, uses this instead of game.getGameTime() */
+  getGameTime?: () => number;
+  /** Function to check if game is finished - if provided, uses this instead of game.gameStateSystem */
+  isGameFinished?: () => boolean;
+  map: MapData;
+  onProgress: (progress: number, status: string) => void;
+  onWebGPUDetected: (isWebGPU: boolean) => void;
+}
+
+export interface UseWebGPURendererReturn {
+  refs: WebGPURendererRefs;
+  isInitialized: boolean;
+  initializeRenderer: () => Promise<boolean>;
+}
+
+export function useWebGPURenderer({
+  canvasRef,
+  containerRef,
+  gameRef,
+  workerBridgeRef,
+  worldProviderRef,
+  eventBusRef,
+  getGameTime: getGameTimeProp,
+  isGameFinished: isGameFinishedProp,
+  map,
+  onProgress,
+  onWebGPUDetected,
+}: UseWebGPURendererProps): UseWebGPURendererReturn {
+  // Store map in a ref so initializeRenderer always gets the latest value
+  // This fixes timing issues where CURRENT_MAP is updated after the hook is called
+  const mapRef = useRef<MapData>(map);
+  mapRef.current = map;
+
+  // All renderer refs
+  const renderContextRef = useRef<RenderContext | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<RTSCamera | null>(null);
+  const unitRendererRef = useRef<UnitRenderer | null>(null);
+  const buildingRendererRef = useRef<BuildingRenderer | null>(null);
+  const resourceRendererRef = useRef<ResourceRenderer | null>(null);
+  const fogOfWarRef = useRef<TSLFogOfWar | null>(null);
+  const battleEffectsRef = useRef<BattleEffectsRenderer | null>(null);
+  const advancedParticlesRef = useRef<AdvancedParticleSystem | null>(null);
+  const vehicleEffectsRef = useRef<VehicleEffectsSystem | null>(null);
+  const rallyPointRendererRef = useRef<RallyPointRenderer | null>(null);
+  const watchTowerRendererRef = useRef<WatchTowerRenderer | null>(null);
+  const placementPreviewRef = useRef<BuildingPlacementPreview | null>(null);
+  const wallPlacementPreviewRef = useRef<WallPlacementPreview | null>(null);
+  const environmentRef = useRef<EnvironmentManager | null>(null);
+  const overlayManagerRef = useRef<TSLGameOverlayManager | null>(null);
+  const commandQueueRendererRef = useRef<CommandQueueRenderer | null>(null);
+  const lightPoolRef = useRef<LightPool | null>(null);
+  const renderPipelineRef = useRef<RenderPipeline | null>(null);
+
+  // Event cleanup
+  const eventUnsubscribersRef = useRef<(() => void)[]>([]);
+  const isInitializedRef = useRef(false);
+  const initializePromiseRef = useRef<Promise<boolean> | null>(null);
+
+  // Track if final game time update has been done
+  const finalGameTimeUpdatedRef = useRef(false);
+
+  // Animation frame ID for cleanup
+  const animationFrameIdRef = useRef<number | null>(null);
+
+  // Accumulators for per-frame render metrics (triangles/drawCalls reset each frame in WebGPU)
+  const accumulatedTrianglesRef = useRef<number>(0);
+  const accumulatedDrawCallsRef = useRef<number>(0);
+
+  // GPU timestamp profiler for actual GPU timing
+  const gpuTimestampProfilerRef = useRef<GPUTimestampProfiler | null>(null);
+
+  // Device lost recovery state
+  const isRecoveringRef = useRef(false);
+  const recoveryAttemptsRef = useRef(0);
+  const deviceLostCallbackRef = useRef<((event: DeviceLostEvent) => void) | null>(null);
+  const MAX_RECOVERY_ATTEMPTS = 3;
+
+  const calculateDisplayResolution = useCallback(() => {
+    const settings = useUIStore.getState().graphicsSettings;
+    const containerWidth = containerRef.current?.clientWidth ?? window.innerWidth;
+    const containerHeight = containerRef.current?.clientHeight ?? window.innerHeight;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+
+    let targetWidth: number;
+    let targetHeight: number;
+    let effectivePixelRatio: number;
+
+    switch (settings.resolutionMode) {
+      case 'fixed': {
+        const fixedResKey = settings.fixedResolution as keyof typeof FIXED_RESOLUTIONS;
+        const fixedRes = FIXED_RESOLUTIONS[fixedResKey];
+        effectivePixelRatio = 1.0;
+        targetWidth = fixedRes.width;
+        targetHeight = fixedRes.height;
+        break;
+      }
+      case 'percentage':
+        effectivePixelRatio = Math.min(devicePixelRatio, settings.maxPixelRatio);
+        targetWidth = Math.floor(containerWidth * settings.resolutionScale);
+        targetHeight = Math.floor(containerHeight * settings.resolutionScale);
+        break;
+      case 'native':
+      default:
+        effectivePixelRatio = Math.min(devicePixelRatio, settings.maxPixelRatio);
+        targetWidth = containerWidth;
+        targetHeight = containerHeight;
+        break;
+    }
+
+    return { width: targetWidth, height: targetHeight, pixelRatio: effectivePixelRatio };
+  }, [containerRef]);
+
+  const handleResize = useCallback(() => {
+    const { width, height, pixelRatio } = calculateDisplayResolution();
+
+    if (renderContextRef.current && cameraRef.current) {
+      const renderer = renderContextRef.current.renderer;
+      renderer.setPixelRatio(pixelRatio);
+      renderer.setSize(width, height, false);
+      cameraRef.current.setScreenDimensions(width, height);
+
+      if (renderPipelineRef.current) {
+        renderPipelineRef.current.setSize(width * pixelRatio, height * pixelRatio);
+      }
+    }
+  }, [calculateDisplayResolution]);
+
+  /**
+   * Handle WebGPU device lost event.
+   * Attempts automatic recovery with reduced quality settings.
+   */
+  const handleDeviceLost = useCallback(
+    async (event: DeviceLostEvent) => {
+      // Prevent concurrent recovery attempts
+      if (isRecoveringRef.current) {
+        debugInitialization.warn('[useWebGPURenderer] Device lost during recovery, ignoring');
+        return;
+      }
+
+      isRecoveringRef.current = true;
+      recoveryAttemptsRef.current++;
+
+      // Log detailed error information
+      debugInitialization.error('[useWebGPURenderer] WebGPU device lost:', {
+        reason: event.reason,
+        message: event.message,
+        timestamp: new Date(event.timestamp).toISOString(),
+        gpuName: event.gpuInfo?.name || '알 수 없음',
+        recoveryAttempt: recoveryAttemptsRef.current,
+      });
+
+      // Show user notification
+      useUIStore
+        .getState()
+        .addNotification(
+          'error',
+          `GPU 디바이스 손실: ${event.reason === 'destroyed' ? '디바이스가 리셋됨' : '예상치 못한 오류'}. 복구 시도 중...`,
+          10000
+        );
+
+      // Stop the animation loop
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+      }
+
+      // Check if we've exceeded max recovery attempts
+      if (recoveryAttemptsRef.current > MAX_RECOVERY_ATTEMPTS) {
+        debugInitialization.error(
+          `[useWebGPURenderer] Exceeded max recovery attempts (${MAX_RECOVERY_ATTEMPTS}), giving up`
+        );
+        useUIStore.getState().addNotification(
+          'error',
+          'Failed to recover from GPU error after multiple attempts. Please refresh the page.',
+          0 // Permanent notification
+        );
+        isRecoveringRef.current = false;
+        return;
+      }
+
+      // Get the canvas for recovery
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        debugInitialization.error('[useWebGPURenderer] No canvas available for recovery');
+        useUIStore
+          .getState()
+          .addNotification(
+            'error',
+            'Cannot recover: Canvas not available. Please refresh the page.',
+            0
+          );
+        isRecoveringRef.current = false;
+        return;
+      }
+
+      // Dispose current resources before recovery
+      try {
+        // Unsubscribe from device lost callback on old context
+        if (renderContextRef.current && deviceLostCallbackRef.current) {
+          renderContextRef.current.offDeviceLost(deviceLostCallbackRef.current);
+        }
+
+        // Dispose renderers and resources
+        renderPipelineRef.current?.dispose();
+        renderPipelineRef.current = null;
+        fogOfWarRef.current?.dispose();
+        fogOfWarRef.current = null;
+        battleEffectsRef.current?.dispose();
+        battleEffectsRef.current = null;
+        advancedParticlesRef.current?.dispose();
+        advancedParticlesRef.current = null;
+        vehicleEffectsRef.current?.dispose();
+        vehicleEffectsRef.current = null;
+        rallyPointRendererRef.current?.dispose();
+        rallyPointRendererRef.current = null;
+        watchTowerRendererRef.current?.dispose();
+        watchTowerRendererRef.current = null;
+        overlayManagerRef.current?.dispose();
+        overlayManagerRef.current = null;
+        commandQueueRendererRef.current?.dispose();
+        commandQueueRendererRef.current = null;
+        lightPoolRef.current?.dispose();
+        lightPoolRef.current = null;
+        unitRendererRef.current?.dispose();
+        unitRendererRef.current = null;
+        buildingRendererRef.current?.dispose();
+        buildingRendererRef.current = null;
+        resourceRendererRef.current?.dispose();
+        resourceRendererRef.current = null;
+        environmentRef.current?.dispose();
+        environmentRef.current = null;
+        renderContextRef.current?.renderer.dispose();
+        renderContextRef.current = null;
+      } catch (disposeError) {
+        debugInitialization.warn(
+          '[useWebGPURenderer] Error disposing resources during recovery:',
+          disposeError
+        );
+      }
+
+      // Attempt recovery with reduced quality
+      try {
+        debugInitialization.log('[useWebGPURenderer] Attempting recovery with reduced quality...');
+
+        const shouldForceWebGL = recoveryAttemptsRef.current >= 2;
+        const newContext = await attemptRecovery(canvas, {
+          reduceQuality: true,
+          forceWebGL: shouldForceWebGL,
+          maxRetries: 2,
+          retryDelayMs: 500,
+        });
+
+        if (!newContext) {
+          throw new Error('복구 시도가 null을 반환했습니다');
+        }
+
+        // Recovery successful - update context
+        renderContextRef.current = newContext;
+        debugInitialization.log(
+          `[useWebGPURenderer] Recovery successful, now using ${newContext.isWebGPU ? 'WebGPU' : 'WebGL'}`
+        );
+
+        // Update UI store with new renderer info
+        useUIStore.getState().setRendererAPI(newContext.isWebGPU ? 'WebGPU' : 'WebGL');
+        useUIStore.getState().setGpuInfo(newContext.gpuInfo);
+
+        // Register device lost handler on new context
+        const newCallback = (e: DeviceLostEvent) => handleDeviceLost(e);
+        deviceLostCallbackRef.current = newCallback;
+        newContext.onDeviceLost(newCallback);
+
+        // Show success notification
+        useUIStore
+          .getState()
+          .addNotification(
+            'info',
+            `Graphics recovered using ${newContext.isWebGPU ? 'WebGPU' : 'WebGL'}. Quality may be reduced.`,
+            5000
+          );
+
+        // Apply reduced quality graphics settings to prevent future issues
+        if (shouldForceWebGL || !newContext.isWebGPU) {
+          // Reduce quality settings when falling back to WebGL
+          const currentSettings = useUIStore.getState().graphicsSettings;
+          if (currentSettings.postProcessingEnabled) {
+            debugInitialization.log('[useWebGPURenderer] Reducing post-processing for stability');
+            useUIStore.getState().setGraphicsSetting('postProcessingEnabled', false);
+          }
+        }
+
+        // Mark renderer as needing reinitialization
+        // The caller (GameCanvas) should detect this and reinitialize the scene
+        isInitializedRef.current = false;
+        initializePromiseRef.current = null;
+        isRecoveringRef.current = false;
+
+        // Notify user that reinit is needed
+        useUIStore
+          .getState()
+          .addNotification(
+            'warning',
+            'Graphics context recovered. Some visual elements may need to reload.',
+            8000
+          );
+      } catch (recoveryError) {
+        debugInitialization.error('[useWebGPURenderer] Recovery failed:', recoveryError);
+        useUIStore
+          .getState()
+          .addNotification(
+            'error',
+            'Failed to recover graphics context. Please refresh the page to continue playing.',
+            0
+          );
+        isRecoveringRef.current = false;
+      }
+    },
+    [canvasRef]
+  );
+
+  const initializeRenderer = useCallback(async (): Promise<boolean> => {
+    if (!canvasRef.current || !containerRef.current) return false;
+    if (isInitializedRef.current) return true;
+    if (initializePromiseRef.current) return initializePromiseRef.current;
+
+    const initPromise = (async (): Promise<boolean> => {
+      const game = gameRef.current;
+      const canvas = canvasRef.current;
+      if (!game || !canvas) return false;
+
+      const getWorldProvider = (): IWorldProvider =>
+        worldProviderRef?.current ?? (game.world as unknown as IWorldProvider);
+      const getEventBus = (): EventBus => eventBusRef?.current ?? game.eventBus;
+
+      try {
+        useUIStore.getState().loadSavedGraphicsSettings();
+        const graphicsSettings = useUIStore.getState().graphicsSettings;
+        const preferWebGPU = useUIStore.getState().preferWebGPU;
+
+        const useHardwareAA = !graphicsSettings.postProcessingEnabled;
+        const renderContext = await createWebGPURenderer({
+          canvas,
+          antialias: useHardwareAA,
+          powerPreference: 'high-performance',
+          forceWebGL: !preferWebGPU,
+        });
+
+        renderContextRef.current = renderContext;
+        onWebGPUDetected(renderContext.isWebGPU);
+
+        const deviceLostCallback = (event: DeviceLostEvent) => handleDeviceLost(event);
+        deviceLostCallbackRef.current = deviceLostCallback;
+        renderContext.onDeviceLost(deviceLostCallback);
+
+        useUIStore.getState().setRendererAPI(renderContext.isWebGPU ? 'WebGPU' : 'WebGL');
+        useUIStore.getState().setGpuInfo(renderContext.gpuInfo);
+        setMaxVertexBuffers(renderContext.deviceLimits.maxVertexBuffers);
+
+        if (renderContext.supportsTimestampQuery && renderContext.gpuDevice) {
+          const profiler = GPUTimestampProfiler.getInstance();
+          const initialized = profiler.initialize(renderContext.gpuDevice);
+          if (initialized) {
+            gpuTimestampProfilerRef.current = profiler;
+            debugInitialization.log('[useWebGPURenderer] GPU timestamp profiler initialized');
+          } else {
+            debugInitialization.log(
+              '[useWebGPURenderer] GPU timestamp profiler initialization failed'
+            );
+          }
+        } else {
+          debugInitialization.log(
+            `[useWebGPURenderer] GPU timestamp queries not available ` +
+              `(supported: ${renderContext.supportsTimestampQuery}, device: ${!!renderContext.gpuDevice})`
+          );
+        }
+
+        debugInitialization.log(
+          `[useWebGPURenderer] Using ${renderContext.isWebGPU ? 'WebGPU' : 'WebGL'} backend`
+        );
+
+        const renderer = renderContext.renderer;
+        const { width, height, pixelRatio } = calculateDisplayResolution();
+
+        renderer.setPixelRatio(pixelRatio);
+        renderer.setSize(width, height, false);
+        renderer.toneMapping = THREE.NoToneMapping;
+        renderer.toneMappingExposure = 1.0;
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x1a1a2e, 50, 150);
+        sceneRef.current = scene;
+
+        const currentMap = mapRef.current;
+        const mapWidth = currentMap.width;
+        const mapHeight = currentMap.height;
+        const camera = new RTSCamera(width / height, mapWidth, mapHeight);
+        cameraRef.current = camera;
+        setCameraRef(camera);
+        camera.setScreenDimensions(width, height);
+
+        const inputManager = InputManager.getInstanceSync();
+        if (inputManager) {
+          inputManager.updateDependencies({ camera });
+        }
+
+        await loadWaterNormalsTexture();
+
+        const environment = new EnvironmentManager(scene, currentMap);
+        environmentRef.current = environment;
+        environment.setRenderer(renderer);
+        const terrain = environment.terrain;
+
+        camera.setTerrainHeightFunction((x, z) => terrain.getHeightAt(x, z));
+
+        const localPlayerSlot = useGameSetupStore.getState().getLocalPlayerSlot();
+        const playerSpawn = currentMap.spawns?.find((s) => s.playerSlot === localPlayerSlot) ||
+          currentMap.spawns?.[0] || { x: mapWidth / 2, y: mapHeight / 2 };
+        camera.setPosition(playerSpawn.x, playerSpawn.y);
+        camera.setAngle(0);
+
+        useProjectionStore
+          .getState()
+          .setWorldToScreen((worldX: number, worldZ: number, worldY?: number) => {
+            return camera.worldToScreen(worldX, worldZ, worldY);
+          });
+
+        const grid = new TerrainGrid(mapWidth, mapHeight, 1);
+        scene.add(grid.mesh);
+
+        game.selectionSystem.setWorldToScreen((worldX: number, worldZ: number, worldY?: number) => {
+          return camera.worldToScreen(worldX, worldZ, worldY);
+        });
+        game.selectionSystem.setTerrainHeightFunction((x: number, z: number) => {
+          return terrain.getHeightAt(x, z);
+        });
+
+        game.setTerrainGrid(currentMap.terrain);
+        game.setDecorationCollisions(environment.getRockCollisions());
+
+        onProgress(65, '내비mesh 생성 중');
+
+        debugInitialization.log('[useWebGPURenderer] Generating walkable geometry...');
+        const walkableGeometry = terrain.generateWalkableGeometry();
+
+        game.pathfindingSystem.setTerrainHeightFunction((x: number, z: number) => {
+          return terrain.getNavmeshHeightAt(x, z);
+        });
+
+        const navMeshSuccess = await game.initializeNavMesh(
+          walkableGeometry.positions,
+          walkableGeometry.indices
+        );
+        if (!navMeshSuccess) {
+          debugInitialization.error('[useWebGPURenderer] NavMesh initialization failed!');
+        }
+
+        if (workerBridgeRef.current) {
+          debugInitialization.log('[useWebGPURenderer] Sending navmesh data to worker...');
+          workerBridgeRef.current.setNavMesh(walkableGeometry.positions, walkableGeometry.indices);
+        }
+
+        debugInitialization.log('[useWebGPURenderer] Generating water geometry...');
+        const waterGeometry = terrain.generateWaterGeometry();
+        if (waterGeometry.positions.length > 0) {
+          const waterNavMeshSuccess = await game.initializeWaterNavMesh(
+            waterGeometry.positions,
+            waterGeometry.indices
+          );
+          if (waterNavMeshSuccess) {
+            debugInitialization.log(
+              '[useWebGPURenderer] Water navmesh initialized for naval units'
+            );
+          }
+          if (workerBridgeRef.current) {
+            debugInitialization.log('[useWebGPURenderer] Sending water navmesh data to worker...');
+            workerBridgeRef.current.setWaterNavMesh(waterGeometry.positions, waterGeometry.indices);
+          }
+        }
+
+        const fogOfWarEnabled = useGameSetupStore.getState().fogOfWar;
+        const localPlayerId = getLocalPlayerId();
+
+        onVelocitySetupFailed(() => {
+          const currentSettings = useUIStore.getState().graphicsSettings;
+          if (currentSettings.antiAliasingMode === 'taa') {
+            debugPostProcessing.warn(
+              '[useWebGPURenderer] Auto-switching from TAA to FXAA due to vertex buffer limit'
+            );
+            useUIStore.getState().setAntiAliasingMode('fxaa');
+          }
+        });
+
+        const worldProvider = getWorldProvider();
+        debugInitialization.log(
+          `[useWebGPURenderer] Creating UnitRenderer with worldProvider: ${worldProvider.constructor.name}`
+        );
+        unitRendererRef.current = new UnitRenderer(
+          scene,
+          worldProvider,
+          worldProviderRef?.current ? undefined : fogOfWarEnabled ? game.visionSystem : undefined,
+          terrain
+        );
+        if (localPlayerId) {
+          unitRendererRef.current.setPlayerId(localPlayerId);
+        }
+
+        if (renderContext.supportsCompute && renderContext.isWebGPU) {
+          unitRendererRef.current.enableGPUDrivenRendering();
+          unitRendererRef.current.setRenderer(renderer as import('three/webgpu').WebGPURenderer);
+          unitRendererRef.current.setCamera(camera.camera);
+          debugInitialization.log('[useWebGPURenderer] GPU-driven unit rendering ENABLED');
+        }
+
+        if (typeof window !== 'undefined') {
+          const debugWindow = window as Window & {
+            VOIDSTRIKE?: {
+              gpu: {
+                stats: () => ReturnType<UnitRenderer['getGPURenderingStats']> | undefined;
+                forceCPU: (enable: boolean) => void | undefined;
+                isGPUActive: () => boolean | undefined;
+              };
+            };
+          };
+          debugWindow.VOIDSTRIKE = {
+            gpu: {
+              stats: () => unitRendererRef.current?.getGPURenderingStats(),
+              forceCPU: (enable: boolean) => unitRendererRef.current?.forceCPUCulling(enable),
+              isGPUActive: () => unitRendererRef.current?.isGPUCullingActive(),
+            },
+          };
+        }
+
+        const buildingWorldProvider = getWorldProvider();
+        debugInitialization.log(
+          `[useWebGPURenderer] Creating BuildingRenderer with worldProvider: ${buildingWorldProvider.constructor.name}`
+        );
+        buildingRendererRef.current = new BuildingRenderer(
+          scene,
+          buildingWorldProvider,
+          worldProviderRef?.current ? undefined : fogOfWarEnabled ? game.visionSystem : undefined,
+          terrain
+        );
+        if (localPlayerId) {
+          buildingRendererRef.current.setPlayerId(localPlayerId);
+        }
+
+        resourceRendererRef.current = new ResourceRenderer(scene, getWorldProvider(), terrain);
+
+        if (fogOfWarEnabled && !isSpectatorMode()) {
+          const fogOfWar = new TSLFogOfWar({ mapWidth, mapHeight });
+          if (!worldProviderRef?.current) {
+            fogOfWar.setVisionSystem(game.visionSystem);
+          }
+          fogOfWar.setPlayerId(localPlayerId);
+          fogOfWarRef.current = fogOfWar;
+        }
+
+        battleEffectsRef.current = new BattleEffectsRenderer(scene, getEventBus(), (x, z) =>
+          terrain.getHeightAt(x, z)
+        );
+
+        advancedParticlesRef.current = new AdvancedParticleSystem(scene, 15000);
+        advancedParticlesRef.current.setTerrainHeightFunction((x: number, z: number) =>
+          terrain.getHeightAt(x, z)
+        );
+        battleEffectsRef.current.setParticleSystem(advancedParticlesRef.current);
+
+        battleEffectsRef.current.setProjectilePositionCallback((entityId: number) => {
+          const world = getWorldProvider();
+          const entity = world.getEntity(entityId);
+          if (!entity || entity.isDestroyed()) return null;
+          const transform = entity.get<Transform>('Transform');
+          if (!transform) return null;
+          return { x: transform.x, y: transform.y, z: transform.z };
+        });
+
+        vehicleEffectsRef.current = new VehicleEffectsSystem(
+          game,
+          advancedParticlesRef.current,
+          AssetManager
+        );
+        vehicleEffectsRef.current.setTerrainHeightFunction((x: number, z: number) =>
+          terrain.getHeightAt(x, z)
+        );
+
+        rallyPointRendererRef.current = new RallyPointRenderer(
+          scene,
+          getEventBus(),
+          getWorldProvider(),
+          localPlayerId,
+          (x: number, y: number) => terrain.getHeightAt(x, y)
+        );
+
+        placementPreviewRef.current = new BuildingPlacementPreview(
+          currentMap,
+          (x: number, y: number) => terrain.getHeightAt(x, y)
+        );
+        placementPreviewRef.current.setPlasmaGeyserChecker((x: number, y: number) => {
+          const world = getWorldProvider();
+          const resources = world.getEntitiesWith('Resource', 'Transform');
+          const searchRadius = 1.5;
+          for (const entity of resources) {
+            const resource = entity.get<Resource>('Resource');
+            if (resource?.resourceType !== 'plasma') continue;
+            if (resource.hasRefinery?.()) continue;
+            const transform = entity.get<Transform>('Transform');
+            if (!transform) continue;
+            const dx = Math.abs(transform.x - x);
+            const dy = Math.abs(transform.y - y);
+            if (dx <= searchRadius && dy <= searchRadius) return true;
+          }
+          return false;
+        });
+        placementPreviewRef.current.setPlacementValidator(
+          (centerX: number, centerY: number, w: number, h: number) => {
+            return game.isValidBuildingPlacement(centerX, centerY, w, h, undefined, true);
+          }
+        );
+        scene.add(placementPreviewRef.current.group);
+
+        wallPlacementPreviewRef.current = new WallPlacementPreview(
+          currentMap,
+          (x: number, y: number) => terrain.getHeightAt(x, y)
+        );
+        wallPlacementPreviewRef.current.setPlacementValidator(
+          (x: number, y: number, w: number, h: number) => {
+            return game.isValidBuildingPlacement(x, y, w, h, undefined, true);
+          }
+        );
+        scene.add(wallPlacementPreviewRef.current.group);
+
+        if (graphicsSettings.postProcessingEnabled) {
+          renderPipelineRef.current = new RenderPipeline(renderer, scene, camera.camera, {
+            bloomEnabled: graphicsSettings.bloomEnabled,
+            bloomStrength: graphicsSettings.bloomStrength,
+            bloomRadius: graphicsSettings.bloomRadius,
+            bloomThreshold: graphicsSettings.bloomThreshold,
+            aoEnabled: graphicsSettings.ssaoEnabled,
+            aoRadius: graphicsSettings.ssaoRadius,
+            aoIntensity: graphicsSettings.ssaoIntensity,
+            ssrEnabled: graphicsSettings.ssrEnabled,
+            ssrOpacity: graphicsSettings.ssrOpacity,
+            ssrMaxRoughness: graphicsSettings.ssrMaxRoughness,
+            ssgiEnabled: graphicsSettings.ssgiEnabled,
+            ssgiRadius: graphicsSettings.ssgiRadius,
+            ssgiIntensity: graphicsSettings.ssgiIntensity,
+            ssgiThickness: 1,
+            antiAliasingMode: graphicsSettings.antiAliasingMode,
+            fxaaEnabled: graphicsSettings.fxaaEnabled,
+            taaEnabled: graphicsSettings.taaEnabled,
+            taaSharpeningEnabled: graphicsSettings.taaSharpeningEnabled,
+            taaSharpeningIntensity: graphicsSettings.taaSharpeningIntensity,
+            upscalingMode: graphicsSettings.upscalingMode,
+            renderScale: graphicsSettings.renderScale,
+            easuSharpness: graphicsSettings.easuSharpness,
+            vignetteEnabled: graphicsSettings.vignetteEnabled,
+            vignetteIntensity: graphicsSettings.vignetteIntensity,
+            exposure: graphicsSettings.toneMappingExposure,
+            saturation: graphicsSettings.saturation,
+            contrast: graphicsSettings.contrast,
+            volumetricFogEnabled: graphicsSettings.volumetricFogEnabled,
+            volumetricFogQuality: graphicsSettings.volumetricFogQuality,
+            volumetricFogDensity: graphicsSettings.volumetricFogDensity,
+            volumetricFogScattering: graphicsSettings.volumetricFogScattering,
+            fogOfWarEnabled: fogOfWarEnabled && !isSpectatorMode(),
+            fogOfWarQuality: graphicsSettings.fogOfWarQuality,
+            fogOfWarEdgeBlur: graphicsSettings.fogOfWarEdgeBlur,
+            fogOfWarDesaturation: graphicsSettings.fogOfWarDesaturation,
+            fogOfWarExploredDarkness: graphicsSettings.fogOfWarExploredDarkness,
+            fogOfWarUnexploredDarkness: graphicsSettings.fogOfWarUnexploredDarkness,
+            fogOfWarCloudSpeed: graphicsSettings.fogOfWarCloudSpeed,
+            fogOfWarRimIntensity: graphicsSettings.fogOfWarRimIntensity,
+            fogOfWarHeightInfluence: graphicsSettings.fogOfWarHeightInfluence,
+          });
+
+          renderPipelineRef.current.setSize(width * pixelRatio, height * pixelRatio);
+
+          if (fogOfWarEnabled && !isSpectatorMode()) {
+            renderPipelineRef.current.setFogOfWarMapDimensions(mapWidth, mapHeight);
+          }
+
+          if (graphicsSettings.taaEnabled || graphicsSettings.ssgiEnabled) {
+            initCameraMatrices(camera.camera);
+          }
+        }
+
+        environmentRef.current?.setShadowsEnabled(graphicsSettings.shadowsEnabled);
+        environmentRef.current?.setShadowQuality(graphicsSettings.shadowQuality);
+        environmentRef.current?.setShadowDistance(graphicsSettings.shadowDistance);
+
+        environmentRef.current?.setFogEnabled(graphicsSettings.fogEnabled);
+        environmentRef.current?.setFogDensity(graphicsSettings.fogDensity);
+        environmentRef.current?.setParticlesEnabled(graphicsSettings.particlesEnabled);
+        environmentRef.current?.setParticleDensity(graphicsSettings.particleDensity);
+        environmentRef.current?.setEnvironmentMapEnabled(graphicsSettings.environmentMapEnabled);
+        environmentRef.current?.setShadowFill(graphicsSettings.shadowFill);
+        environmentRef.current?.setEmissiveDecorationsEnabled(
+          graphicsSettings.emissiveDecorationsEnabled
+        );
+        environmentRef.current?.setEmissiveIntensityMultiplier(
+          graphicsSettings.emissiveIntensityMultiplier
+        );
+
+        environmentRef.current?.setWaterEnabled(graphicsSettings.waterEnabled);
+        environmentRef.current?.setWaterQuality(graphicsSettings.waterQuality);
+        environmentRef.current?.setWaterReflectionsEnabled(
+          graphicsSettings.waterReflectionsEnabled
+        );
+
+        if (graphicsSettings.dynamicLightsEnabled) {
+          lightPoolRef.current = new LightPool(scene, graphicsSettings.maxDynamicLights);
+        }
+
+        overlayManagerRef.current = new TSLGameOverlayManager(scene, currentMap, (x, y) =>
+          terrain.getHeightAt(x, y)
+        );
+        overlayManagerRef.current.setWorld(getWorldProvider());
+
+        commandQueueRendererRef.current = new CommandQueueRenderer(
+          scene,
+          getEventBus(),
+          getWorldProvider(),
+          localPlayerId,
+          (x, y) => terrain.getHeightAt(x, y)
+        );
+
+        const eventBus = getEventBus();
+        eventUnsubscribersRef.current.push(
+          eventBus.on(
+            'combat:attack',
+            (data: {
+              attackerId?: string;
+              attackerPos?: { x: number; y: number };
+              targetPos?: { x: number; y: number };
+              targetUnitType?: string;
+              damageType?: string;
+              attackerIsFlying?: boolean;
+              targetIsFlying?: boolean;
+            }) => {
+              if (data.attackerPos && data.targetPos && advancedParticlesRef.current) {
+                const attackerTerrainHeight = terrain.getHeightAt(
+                  data.attackerPos.x,
+                  data.attackerPos.y
+                );
+                const targetTerrainHeight = terrain.getHeightAt(data.targetPos.x, data.targetPos.y);
+
+                const attackerAirborneHeight = data.attackerId
+                  ? AssetManager.getAirborneHeight(data.attackerId)
+                  : DEFAULT_AIRBORNE_HEIGHT;
+                const targetAirborneHeight = data.targetUnitType
+                  ? AssetManager.getAirborneHeight(data.targetUnitType)
+                  : DEFAULT_AIRBORNE_HEIGHT;
+                const attackerFlyingOffset = data.attackerIsFlying ? attackerAirborneHeight : 0;
+                const targetFlyingOffset = data.targetIsFlying ? targetAirborneHeight : 0;
+
+                const startHeight = attackerTerrainHeight + 0.5 + attackerFlyingOffset;
+                const endHeight = targetTerrainHeight + 0.5 + targetFlyingOffset;
+
+                _combatStartPos.set(data.attackerPos.x, startHeight, data.attackerPos.y);
+                _combatEndPos.set(data.targetPos.x, endHeight, data.targetPos.y);
+                _combatDirection.copy(_combatEndPos).sub(_combatStartPos).normalize();
+
+                advancedParticlesRef.current.emitMuzzleFlash(_combatStartPos, _combatDirection);
+                advancedParticlesRef.current.emitImpact(_combatEndPos, _combatDirection.negate());
+              }
+            }
+          )
+        );
+
+        eventUnsubscribersRef.current.push(
+          eventBus.on(
+            'unit:died',
+            (data: {
+              position?: { x: number; y: number };
+              isFlying?: boolean;
+              unitType?: string;
+            }) => {
+              if (data.position && advancedParticlesRef.current) {
+                const terrainHeight = terrain.getHeightAt(data.position.x, data.position.y);
+                const airborneHeight = data.unitType
+                  ? AssetManager.getAirborneHeight(data.unitType)
+                  : DEFAULT_AIRBORNE_HEIGHT;
+                const flyingOffset = data.isFlying ? airborneHeight : 0;
+                const effectHeight = terrainHeight + 0.5 + flyingOffset;
+
+                _deathPos.set(data.position.x, effectHeight, data.position.y);
+                advancedParticlesRef.current.emitExplosion(_deathPos, 1.2);
+              }
+            }
+          )
+        );
+
+        eventUnsubscribersRef.current.push(
+          eventBus.on(
+            'building:destroyed',
+            (data: {
+              entityId: number;
+              playerId: string;
+              buildingType: string;
+              position: { x: number; y: number };
+            }) => {
+              if (advancedParticlesRef.current) {
+                const terrainHeight = terrain.getHeightAt(data.position.x, data.position.y);
+                const isLarge = ['headquarters', 'infantry_bay', 'forge', 'hangar'].includes(
+                  data.buildingType
+                );
+                _deathPos.set(data.position.x, terrainHeight + 1, data.position.y);
+                advancedParticlesRef.current.emitExplosion(_deathPos, isLarge ? 2.5 : 1.5);
+              }
+            }
+          )
+        );
+
+        if (
+          currentMap.watchTowers &&
+          currentMap.watchTowers.length > 0 &&
+          !worldProviderRef?.current
+        ) {
+          game.visionSystem.setWatchTowers(currentMap.watchTowers);
+          watchTowerRendererRef.current = new WatchTowerRenderer(scene, game.visionSystem);
+        }
+
+        if (!worldProviderRef?.current) {
+          game.visionSystem.setHeightProvider((x: number, y: number) => terrain.getHeightAt(x, y));
+        }
+
+        isInitializedRef.current = true;
+        startAnimationLoop();
+        return true;
+      } catch (error) {
+        debugInitialization.error('[useWebGPURenderer] Initialization failed:', error);
+        return false;
+      } finally {
+        initializePromiseRef.current = null;
+      }
+    })();
+
+    initializePromiseRef.current = initPromise;
+    return initPromise;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startAnimationLoop uses ref-backed state and workerBridgeRef is stable
+  }, [
+    canvasRef,
+    containerRef,
+    gameRef,
+    worldProviderRef,
+    eventBusRef,
+    onProgress,
+    onWebGPUDetected,
+    calculateDisplayResolution,
+    handleDeviceLost,
+  ]);
+
+  const startAnimationLoop = useCallback(() => {
+    const game = gameRef.current;
+    const camera = cameraRef.current;
+    const scene = sceneRef.current;
+    const renderContext = renderContextRef.current;
+
+    if (!game || !camera || !scene || !renderContext) return;
+
+    // Helper to get world provider (uses worldProviderRef if available, falls back to game.world)
+    const getWorldProvider = (): IWorldProvider =>
+      worldProviderRef?.current ?? (game.world as unknown as IWorldProvider);
+    // Helper to get game time (uses prop if available, falls back to game.getGameTime())
+    const getGameTimeValue = (): number => getGameTimeProp?.() ?? game.getGameTime();
+    // Helper to check if game is finished (uses prop if available, falls back to game.gameStateSystem)
+    const checkGameFinished = (): boolean =>
+      isGameFinishedProp?.() ?? game.gameStateSystem.isGameFinished();
+
+    let lastTime = performance.now();
+    let lastRenderTime = 0;
+    let frameCount = 0;
+    let lastFpsLog = performance.now();
+
+    const animate = (currentTime: number) => {
+      // Frame rate limiting
+      const maxFPS = useUIStore.getState().graphicsSettings.maxFPS;
+      if (maxFPS > 0) {
+        const minFrameTime = 1000 / maxFPS;
+        if (currentTime - lastRenderTime < minFrameTime) {
+          animationFrameIdRef.current = requestAnimationFrame(animate);
+          return;
+        }
+      }
+      lastRenderTime = currentTime;
+
+      const frameStart = performance.now();
+      const deltaTime = currentTime - lastTime;
+      const prevTime = lastTime;
+      lastTime = currentTime;
+
+      // FPS logging
+      frameCount++;
+      if (currentTime - lastFpsLog > 1000) {
+        const actualFps = frameCount / ((currentTime - lastFpsLog) / 1000);
+        if (actualFps < 30) {
+          debugPerformance.warn(`[FPS] Actual: ${actualFps.toFixed(1)}`);
+        }
+        frameCount = 0;
+        lastFpsLog = currentTime;
+      }
+
+      // Handle pending camera moves
+      const pendingMove = useGameStore.getState().pendingCameraMove;
+      if (pendingMove) {
+        camera.setPosition(pendingMove.x, pendingMove.y);
+        useGameStore.getState().clearPendingCameraMove();
+      }
+
+      // Update systems
+      const updatesStart = performance.now();
+      camera.update(deltaTime);
+
+      // Update viewport bounds
+      const viewportBounds = camera.getViewportBounds();
+      game.selectionSystem.setViewportBounds(
+        viewportBounds.minX,
+        viewportBounds.maxX,
+        viewportBounds.minZ,
+        viewportBounds.maxZ
+      );
+
+      // Set camera reference for frustum culling
+      const threeCamera = camera.camera;
+      unitRendererRef.current?.setCamera(threeCamera);
+      buildingRendererRef.current?.setCamera(threeCamera);
+      resourceRendererRef.current?.setCamera(threeCamera);
+      vehicleEffectsRef.current?.setCamera(threeCamera);
+
+      threeCamera.updateMatrixWorld();
+
+      // Sync camera position for audio distance culling (spatial sound pre-cull)
+      AudioManager.updateListenerPosition(threeCamera.position);
+
+      // Update renderers
+      const DETAILED_TIMING = useUIStore.getState().debugSettings.debugPerformance;
+      const sceneChildCount = scene.children.length;
+      let unitTime = 0,
+        buildingTime = 0,
+        resourceTime = 0,
+        fogTime = 0;
+
+      if (DETAILED_TIMING) {
+        let t = performance.now();
+        unitRendererRef.current?.update();
+        unitTime = performance.now() - t;
+
+        t = performance.now();
+        buildingRendererRef.current?.update();
+        buildingTime = performance.now() - t;
+
+        t = performance.now();
+        resourceRendererRef.current?.update();
+        resourceTime = performance.now() - t;
+
+        t = performance.now();
+        // In worker mode, update fog of war from RenderState vision data
+        if (worldProviderRef?.current && fogOfWarRef.current) {
+          const localPlayerId = getLocalPlayerId();
+          if (localPlayerId) {
+            const visionData =
+              RenderStateWorldAdapter.getInstance().getVisionDataForPlayer(localPlayerId);
+            if (visionData) {
+              fogOfWarRef.current.updateFromSerializedData(visionData);
+            }
+          }
+        } else {
+          fogOfWarRef.current?.update();
+        }
+        fogTime = performance.now() - t;
+      } else {
+        unitRendererRef.current?.update();
+        buildingRendererRef.current?.update();
+        resourceRendererRef.current?.update();
+        // In worker mode, update fog of war from RenderState vision data
+        if (worldProviderRef?.current && fogOfWarRef.current) {
+          const localPlayerId = getLocalPlayerId();
+          if (localPlayerId) {
+            const visionData =
+              RenderStateWorldAdapter.getInstance().getVisionDataForPlayer(localPlayerId);
+            if (visionData) {
+              fogOfWarRef.current.updateFromSerializedData(visionData);
+            }
+          }
+        } else {
+          fogOfWarRef.current?.update();
+        }
+      }
+
+      // Update post-processing fog of war
+      if (renderPipelineRef.current?.isFogOfWarEnabled() && fogOfWarRef.current) {
+        const visionTexture = fogOfWarRef.current.getVisionTexture();
+        renderPipelineRef.current.setFogOfWarVisionTexture(visionTexture);
+        renderPipelineRef.current.updateFogOfWarTime(currentTime / 1000);
+      }
+
+      rallyPointRendererRef.current?.update();
+      watchTowerRendererRef.current?.update(deltaTime);
+      placementPreviewRef.current?.update(deltaTime / 1000);
+
+      const gameTime = getGameTimeValue();
+      environmentRef.current?.update(deltaTime / 1000, gameTime, camera.camera);
+      environmentRef.current?.updateShadowCameraPosition(camera.target.x, camera.target.z);
+
+      const entityCount = getWorldProvider().getEntityCount();
+      environmentRef.current?.setHasMovingEntities(entityCount > 0);
+      environmentRef.current?.updateShadows();
+
+      battleEffectsRef.current?.update(deltaTime);
+      advancedParticlesRef.current?.update(deltaTime / 1000, camera.camera);
+      vehicleEffectsRef.current?.update(deltaTime / 1000);
+      lightPoolRef.current?.update();
+      overlayManagerRef.current?.update(deltaTime);
+      commandQueueRendererRef.current?.update();
+
+      const updatesElapsed = performance.now() - updatesStart;
+      if (updatesElapsed > 10) {
+        if (DETAILED_TIMING) {
+          debugPerformance.warn(
+            `[UPDATES] Total: ${updatesElapsed.toFixed(1)}ms | ` +
+              `Unit: ${unitTime.toFixed(1)}ms | Building: ${buildingTime.toFixed(1)}ms | ` +
+              `Resource: ${resourceTime.toFixed(1)}ms | Fog: ${fogTime.toFixed(1)}ms | ` +
+              `SceneObjects: ${sceneChildCount}`
+          );
+        } else {
+          debugPerformance.warn(`[UPDATES] Total update time: ${updatesElapsed.toFixed(1)}ms`);
+        }
+      }
+
+      if (DETAILED_TIMING && sceneChildCount > 1500) {
+        debugPerformance.warn(
+          `[LEAK?] Scene has ${sceneChildCount} children - check for object leaks!`
+        );
+      }
+
+      // Update overlay manager with selected entities
+      const selectedUnits = useGameStore.getState().selectedUnits;
+      overlayManagerRef.current?.setSelectedEntities(selectedUnits);
+
+      // Throttle zustand store updates
+      if (deltaTime > 0) {
+        const isFinished = checkGameFinished();
+        if (Math.floor(currentTime / 1000) !== Math.floor(prevTime / 1000)) {
+          if (!isFinished) {
+            useGameStore.getState().setGameTime(gameTime);
+          }
+        }
+        if (isFinished && !finalGameTimeUpdatedRef.current) {
+          finalGameTimeUpdatedRef.current = true;
+          useGameStore.getState().setGameTime(gameTime);
+        }
+        if (Math.floor(currentTime / 100) !== Math.floor(prevTime / 100)) {
+          const pos = camera.getPosition();
+          useGameStore.getState().setCamera(pos.x, pos.z, camera.getZoom());
+        }
+      }
+
+      // Render
+      const renderStart = performance.now();
+
+      if (renderPipelineRef.current?.isTAAEnabled() || renderPipelineRef.current?.isSSGIEnabled()) {
+        setCameraMatricesBeforeRender(camera.camera);
+      }
+
+      if (renderPipelineRef.current) {
+        renderPipelineRef.current.render();
+      } else {
+        renderContext.renderer.render(scene, camera.camera);
+      }
+
+      const renderElapsed = performance.now() - renderStart;
+
+      // Accumulate render metrics immediately after render (before info gets reset)
+      // In WebGPU, renderer.info is reset at start of each render call, so we must
+      // accumulate across all frames to get accurate per-second totals
+      const rendererInfo = renderContext.renderer.info;
+      accumulatedTrianglesRef.current += rendererInfo.render.triangles;
+      accumulatedDrawCallsRef.current += rendererInfo.render.calls;
+
+      if (renderPipelineRef.current?.isTAAEnabled()) {
+        updateCameraMatrices(camera.camera);
+      }
+
+      const frameElapsed = performance.now() - frameStart;
+      if (DETAILED_TIMING && frameElapsed > 16) {
+        debugPerformance.warn(
+          `[FRAME] Total: ${frameElapsed.toFixed(1)}ms, Render: ${renderElapsed.toFixed(1)}ms`
+        );
+      }
+
+      // Update performance metrics once per second
+      if (Math.floor(currentTime / 1000) !== Math.floor(prevTime / 1000)) {
+        const cpuTime = updatesElapsed;
+        const gpuTime = renderElapsed;
+
+        let renderWidth = 0,
+          renderHeight = 0,
+          displayWidth = 0,
+          displayHeight = 0;
+        if (renderPipelineRef.current) {
+          const renderRes = renderPipelineRef.current.getRenderResolution();
+          const displayRes = renderPipelineRef.current.getDisplayResolution();
+          renderWidth = renderRes.width;
+          renderHeight = renderRes.height;
+          displayWidth = displayRes.width;
+          displayHeight = displayRes.height;
+        } else {
+          const size = new THREE.Vector2();
+          renderContext.renderer.getSize(size);
+          const pr = window.devicePixelRatio || 1;
+          renderWidth = displayWidth = Math.floor(size.x * pr);
+          renderHeight = displayHeight = Math.floor(size.y * pr);
+        }
+
+        const gpuStats = unitRendererRef.current?.getGPURenderingStats();
+
+        // Use accumulated metrics (summed across all frames this second)
+        const trianglesThisSecond = accumulatedTrianglesRef.current;
+        const drawCallsThisSecond = accumulatedDrawCallsRef.current;
+
+        useUIStore.getState().updatePerformanceMetrics({
+          cpuTime,
+          gpuTime,
+          frameTime: frameElapsed,
+          triangles: trianglesThisSecond,
+          drawCalls: drawCallsThisSecond,
+          renderWidth,
+          renderHeight,
+          displayWidth,
+          displayHeight,
+          gpuCullingActive: gpuStats?.isUsingGPUCulling ?? false,
+          gpuIndirectActive: gpuStats?.indirectReady ?? false,
+          gpuManagedUnits: gpuStats?.managedEntities ?? 0,
+        });
+
+        const fps = frameElapsed > 0 ? 1000 / frameElapsed : 60;
+        // Convert accumulated per-second totals to per-frame values
+        const trianglesPerFrame =
+          fps > 0 ? Math.round(trianglesThisSecond / fps) : trianglesThisSecond;
+        const drawCallsPerFrame =
+          fps > 0 ? Math.round(drawCallsThisSecond / fps) : drawCallsThisSecond;
+        PerformanceMonitor.updateRenderMetrics(drawCallsPerFrame, trianglesPerFrame, fps);
+
+        // Update GPU timing from timestamp profiler
+        const gpuProfiler = gpuTimestampProfilerRef.current;
+        if (gpuProfiler) {
+          const gpuTiming = gpuProfiler.getLastFrameTime();
+          PerformanceMonitor.updateGPUTiming(
+            gpuTiming.frameTimeMs,
+            gpuProfiler.getAverageFrameTime(),
+            gpuTiming.available
+          );
+        } else {
+          // Report that GPU timing is not available
+          PerformanceMonitor.updateGPUTiming(0, 0, false);
+        }
+
+        // Reset accumulators for next second
+        accumulatedTrianglesRef.current = 0;
+        accumulatedDrawCallsRef.current = 0;
+      }
+
+      animationFrameIdRef.current = requestAnimationFrame(animate);
+    };
+
+    animationFrameIdRef.current = requestAnimationFrame(animate);
+  }, [gameRef, worldProviderRef, getGameTimeProp, isGameFinishedProp]);
+
+  // Handle resize
+  useEffect(() => {
+    if (!isInitializedRef.current) return;
+
+    window.addEventListener('resize', handleResize);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (containerRef.current) {
+      resizeObserver = new ResizeObserver(handleResize);
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      resizeObserver?.disconnect();
+    };
+  }, [handleResize, containerRef]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      // Cancel animation frame
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+      }
+
+      // Unsubscribe from events
+      for (const unsubscribe of eventUnsubscribersRef.current) {
+        unsubscribe();
+      }
+      eventUnsubscribersRef.current = [];
+
+      // Unsubscribe from device lost callback
+      if (renderContextRef.current && deviceLostCallbackRef.current) {
+        renderContextRef.current.offDeviceLost(deviceLostCallbackRef.current);
+        deviceLostCallbackRef.current = null;
+      }
+
+      // Clear projection store
+      useProjectionStore.getState().setWorldToScreen(null);
+
+      // Dispose all renderers
+      renderContextRef.current?.renderer.dispose();
+      environmentRef.current?.dispose();
+      fogOfWarRef.current?.dispose();
+      battleEffectsRef.current?.dispose();
+      advancedParticlesRef.current?.dispose();
+      vehicleEffectsRef.current?.dispose();
+      rallyPointRendererRef.current?.dispose();
+      watchTowerRendererRef.current?.dispose();
+      cameraRef.current?.dispose();
+      setCameraRef(null);
+      unitRendererRef.current?.dispose();
+      buildingRendererRef.current?.dispose();
+      resourceRendererRef.current?.dispose();
+      renderPipelineRef.current?.dispose();
+      overlayManagerRef.current?.dispose();
+      commandQueueRendererRef.current?.dispose();
+      lightPoolRef.current?.dispose();
+
+      // Clean up GPU timestamp profiler
+      GPUTimestampProfiler.resetInstance();
+      gpuTimestampProfilerRef.current = null;
+
+      isInitializedRef.current = false;
+      initializePromiseRef.current = null;
+    };
+  }, []);
+
+  return {
+    refs: {
+      renderContext: renderContextRef,
+      scene: sceneRef,
+      camera: cameraRef,
+      unitRenderer: unitRendererRef,
+      buildingRenderer: buildingRendererRef,
+      resourceRenderer: resourceRendererRef,
+      fogOfWar: fogOfWarRef,
+      battleEffects: battleEffectsRef,
+      advancedParticles: advancedParticlesRef,
+      vehicleEffects: vehicleEffectsRef,
+      rallyPointRenderer: rallyPointRendererRef,
+      watchTowerRenderer: watchTowerRendererRef,
+      placementPreview: placementPreviewRef,
+      wallPlacementPreview: wallPlacementPreviewRef,
+      environment: environmentRef,
+      overlayManager: overlayManagerRef,
+      commandQueueRenderer: commandQueueRendererRef,
+      lightPool: lightPoolRef,
+      renderPipeline: renderPipelineRef,
+    },
+    isInitialized: isInitializedRef.current,
+    initializeRenderer,
+  };
+}

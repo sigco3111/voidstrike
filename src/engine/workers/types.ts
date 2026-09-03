@@ -1,0 +1,590 @@
+/**
+ * Game Worker Types
+ *
+ * Defines the data structures for communication between the main thread
+ * and the game worker. Uses efficient serialization with typed arrays
+ * where performance is critical.
+ */
+
+import type { UnitState, DamageType } from '../components/Unit';
+import type { BuildingState, AddonType } from '../components/Building';
+import type { ResourceType } from '../components/Resource';
+import type { GameState, TerrainCell, GameConfig } from '../core/Game';
+import type { GameCommand } from '../core/GameCommand';
+import type { DebugSettings } from '@/store/uiStore';
+import type { PathTelemetryEvent } from '@/engine/debug/pathTelemetry';
+
+// ============================================================================
+// RENDER STATE - Data transferred from worker to main thread for rendering
+// ============================================================================
+
+/**
+ * Snapshot of a unit's render-relevant state.
+ * Optimized for transfer - only includes data needed for rendering.
+ */
+export interface UnitRenderState {
+  id: number;
+  // Transform
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  scaleZ: number;
+  // Previous transform for interpolation
+  prevX: number;
+  prevY: number;
+  prevZ: number;
+  prevRotation: number;
+  // Unit info
+  unitId: string;
+  faction: string;
+  state: UnitState;
+  isFlying: boolean;
+  isSubmerged: boolean;
+  isCloaked: boolean;
+  // Health
+  health: number;
+  maxHealth: number;
+  shield: number;
+  maxShield: number;
+  isDead: boolean;
+  // Selection
+  playerId: string;
+  isSelected: boolean;
+  controlGroup: number | null;
+  // Combat visual info
+  targetEntityId: number | null;
+  lastAttackTime: number;
+  // Worker visual info
+  isWorker: boolean;
+  carryingMinerals: number;
+  carryingPlasma: number;
+  isMining: boolean;
+  gatherTargetId: number | null;
+  // Transform mode
+  currentMode: string;
+  transformProgress: number;
+  // Repair visual
+  isRepairing: boolean;
+  repairTargetId: number | null;
+  // Buff indicators
+  hasSpeedBuff: boolean;
+  hasDamageBuff: boolean;
+  // Movement/targeting for waypoint visualization
+  targetX: number | null;
+  targetY: number | null;
+  speed: number;
+  // Command queue for shift-click visualization (serialized)
+  commandQueue: SerializedQueuedCommand[];
+  // Combat stats for range overlays
+  attackRange: number;
+  sightRange: number;
+  // Targeting capabilities
+  isNaval: boolean;
+  canAttackGround: boolean;
+  canAttackAir: boolean;
+  // Selection properties for hit detection
+  selectionRadius: number;
+  selectionPriority: number;
+}
+
+/**
+ * Serialized form of QueuedCommand for transfer to main thread.
+ * Simplified to only include render-relevant data.
+ */
+export interface SerializedQueuedCommand {
+  type: string;
+  targetX?: number;
+  targetY?: number;
+  targetEntityId?: number;
+}
+
+/**
+ * Snapshot of a building's render-relevant state.
+ */
+export interface BuildingRenderState {
+  id: number;
+  // Transform
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+  // Building info
+  buildingId: string;
+  faction: string;
+  state: BuildingState;
+  buildProgress: number;
+  width: number;
+  height: number;
+  // Health
+  health: number;
+  maxHealth: number;
+  isDead: boolean;
+  // Selection
+  playerId: string;
+  isSelected: boolean;
+  // Flying state
+  isFlying: boolean;
+  liftProgress: number;
+  // Addon
+  currentAddon: AddonType;
+  // Supply depot
+  isLowered: boolean;
+  // Production visual
+  productionProgress: number;
+  hasProductionQueue: boolean;
+  // Rally point
+  rallyX: number | null;
+  rallyY: number | null;
+  // Combat stats for range overlays
+  attackRange: number;
+  sightRange: number;
+  // Selection properties for hit detection
+  selectionRadius: number;
+  selectionPriority: number;
+}
+
+/**
+ * Snapshot of a resource's render-relevant state.
+ */
+export interface ResourceRenderState {
+  id: number;
+  // Transform
+  x: number;
+  y: number;
+  z: number;
+  // Resource info
+  resourceType: ResourceType;
+  amount: number;
+  maxAmount: number;
+  percentRemaining: number;
+  // Gatherer count for saturation visual
+  gathererCount: number;
+  hasExtractor: boolean;
+}
+
+/**
+ * Snapshot of a projectile's render-relevant state.
+ */
+export interface ProjectileRenderState {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  prevX: number;
+  prevY: number;
+  prevZ: number;
+  projectileType: string;
+  faction: string;
+  isActive: boolean;
+}
+
+/**
+ * Player resource state for UI display
+ */
+export interface PlayerResourceState {
+  minerals: number;
+  plasma: number;
+  supply: number;
+  maxSupply: number;
+}
+
+/**
+ * Serializable render state for worker-to-main-thread transfer.
+ * Note: Maps cannot be serialized through postMessage, so we use arrays of tuples.
+ */
+export interface SerializedRenderState {
+  tick: number;
+  gameTime: number;
+  gameState: GameState;
+  interpolation: number;
+
+  // Entity snapshots
+  units: UnitRenderState[];
+  buildings: BuildingRenderState[];
+  resources: ResourceRenderState[];
+  projectiles: ProjectileRenderState[];
+
+  // Vision data (per-player fog of war) - serialized as array of [playerId, grid] tuples
+  visionGrids: Array<[string, Uint8Array]>;
+
+  // Player resources (for UI) - serialized as array of [playerId, resources] tuples
+  playerResources: Array<[string, PlayerResourceState]>;
+
+  // Selection state
+  selectedEntityIds: number[];
+  // Control groups - serialized as array of [groupNumber, entityIds] tuples
+  controlGroups: Array<[number, number[]]>;
+}
+
+/**
+ * Complete render state for a single frame (main thread representation).
+ * Converted from SerializedRenderState after receiving from worker.
+ */
+export interface RenderState {
+  tick: number;
+  gameTime: number;
+  gameState: GameState;
+  interpolation: number;
+
+  // Entity snapshots
+  units: UnitRenderState[];
+  buildings: BuildingRenderState[];
+  resources: ResourceRenderState[];
+  projectiles: ProjectileRenderState[];
+
+  // Vision data (per-player fog of war)
+  visionGrids: Map<string, Uint8Array>;
+
+  // Player resources (for UI)
+  playerResources: Map<string, PlayerResourceState>;
+
+  // Selection state
+  selectedEntityIds: number[];
+  controlGroups: Map<number, number[]>;
+}
+
+/**
+ * Convert serialized render state (from worker) to RenderState (with Maps)
+ */
+export function deserializeRenderState(serialized: SerializedRenderState): RenderState {
+  return {
+    tick: serialized.tick,
+    gameTime: serialized.gameTime,
+    gameState: serialized.gameState,
+    interpolation: serialized.interpolation,
+    units: serialized.units,
+    buildings: serialized.buildings,
+    resources: serialized.resources,
+    projectiles: serialized.projectiles,
+    visionGrids: new Map(serialized.visionGrids),
+    playerResources: new Map(serialized.playerResources),
+    selectedEntityIds: serialized.selectedEntityIds,
+    controlGroups: new Map(serialized.controlGroups),
+  };
+}
+
+// ============================================================================
+// GAME EVENTS - Events emitted from worker for audio/effects on main thread
+// ============================================================================
+
+export interface CombatAttackEvent {
+  type: 'combat:attack';
+  attackerId: number;
+  attackerType: string;
+  attackerPos: { x: number; y: number };
+  targetPos: { x: number; y: number };
+  targetId?: number;
+  targetUnitType?: string;
+  damage: number;
+  damageType: DamageType;
+  attackerIsFlying: boolean;
+  targetIsFlying: boolean;
+  attackerFaction: string;
+}
+
+export interface ProjectileSpawnEvent {
+  type: 'projectile:spawned';
+  entityId: number;
+  startPos: { x: number; y: number; z: number };
+  targetPos: { x: number; y: number; z: number };
+  projectileType: string;
+  faction: string;
+  trailType?: string;
+}
+
+export interface ProjectileImpactEvent {
+  type: 'projectile:impact';
+  entityId: number;
+  position: { x: number; y: number; z: number };
+  damageType: DamageType;
+  splashRadius: number;
+  faction: string;
+}
+
+export interface UnitDiedEvent {
+  type: 'unit:died';
+  entityId: number;
+  position: { x: number; y: number };
+  isFlying: boolean;
+  unitType: string;
+  faction: string;
+}
+
+export interface BuildingDestroyedEvent {
+  type: 'building:destroyed';
+  entityId: number;
+  playerId: string;
+  buildingType: string;
+  position: { x: number; y: number };
+  faction: string;
+}
+
+export interface UnitTrainedEvent {
+  type: 'unit:trained';
+  entityId: number;
+  unitType: string;
+  playerId: string;
+  position: { x: number; y: number };
+}
+
+export interface BuildingCompleteEvent {
+  type: 'building:complete';
+  entityId: number;
+  buildingType: string;
+  playerId: string;
+  position: { x: number; y: number };
+}
+
+export interface UpgradeCompleteEvent {
+  type: 'upgrade:complete';
+  upgradeId: string;
+  playerId: string;
+}
+
+export interface AbilityUsedEvent {
+  type: 'ability:used';
+  abilityId: string;
+  casterId: number;
+  casterType: string;
+  position: { x: number; y: number };
+  targetId?: number;
+  targetPosition?: { x: number; y: number };
+}
+
+export interface SelectionChangedEvent {
+  type: 'selection:changed';
+  entityIds: number[];
+  primaryType?: string;
+  playerId: string;
+}
+
+export interface AlertEvent {
+  type: 'alert';
+  alertType:
+    | 'under_attack'
+    | 'unit_ready'
+    | 'research_complete'
+    | 'resources_low'
+    | 'base_destroyed';
+  position?: { x: number; y: number };
+  playerId: string;
+  details?: string;
+}
+
+export interface DamageDealtEvent {
+  type: 'damage:dealt';
+  targetId: number;
+  damage: number;
+  targetPos: { x: number; y: number };
+  targetHeight?: number;
+  isKillingBlow?: boolean;
+  isCritical?: boolean;
+  targetIsFlying?: boolean;
+  targetUnitType?: string;
+  targetPlayerId?: string;
+}
+
+export type GameEvent =
+  | CombatAttackEvent
+  | ProjectileSpawnEvent
+  | ProjectileImpactEvent
+  | UnitDiedEvent
+  | BuildingDestroyedEvent
+  | UnitTrainedEvent
+  | BuildingCompleteEvent
+  | UpgradeCompleteEvent
+  | AbilityUsedEvent
+  | SelectionChangedEvent
+  | AlertEvent
+  | DamageDealtEvent;
+
+// ============================================================================
+// WORKER MESSAGES - Communication protocol between main thread and worker
+// ============================================================================
+
+/**
+ * Messages sent FROM main thread TO game worker
+ */
+export type MainToWorkerMessage =
+  | { type: 'init'; config: GameConfig; playerId: string }
+  | { type: 'start' }
+  | { type: 'stop' }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'setDebugSettings'; settings: DebugSettings }
+  | { type: 'command'; command: GameCommand }
+  | { type: 'setTerrain'; terrain: TerrainCell[][] }
+  | { type: 'setNavMesh'; positions: Float32Array; indices: Uint32Array }
+  | { type: 'setWaterNavMesh'; positions: Float32Array; indices: Uint32Array }
+  | { type: 'setDecorations'; collisions: Array<{ x: number; z: number; radius: number }> }
+  | { type: 'multiplayerCommand'; command: GameCommand; fromPeerId: string }
+  | { type: 'networkPause'; paused: boolean }
+  | { type: 'requestChecksum' }
+  | { type: 'setSelection'; entityIds: number[]; playerId: string }
+  | { type: 'setControlGroup'; groupNumber: number; entityIds: number[] }
+  | { type: 'spawnEntities'; mapData: SpawnMapData }
+  | { type: 'setPerformanceCollection'; enabled: boolean }
+  | { type: 'spawnUnit'; unitType: string; x: number; y: number; playerId: string }
+  | { type: 'destroyEntity'; entityId: number }
+  | {
+      type: 'registerAI';
+      playerId: string;
+      faction: string;
+      difficulty?: 'easy' | 'medium' | 'hard' | 'insane';
+    };
+
+/**
+ * Player slot info for spawning
+ */
+export interface PlayerSlotInfo {
+  id: string;
+  type: 'human' | 'ai' | 'empty';
+  faction: string;
+  aiDifficulty?: 'easy' | 'medium' | 'hard' | 'insane';
+  /** Team number: 0 = FFA (no alliance), 1-4 = team alliance */
+  team?: number;
+}
+
+/**
+ * Map data needed for spawning entities in worker
+ */
+export interface SpawnMapData {
+  width: number;
+  height: number;
+  name: string;
+  startingResources?: {
+    minerals: number;
+    plasma: number;
+  };
+  spawns?: Array<{
+    playerSlot: number;
+    x: number;
+    y: number;
+  }>;
+  resources?: Array<{
+    type: 'mineral' | 'plasma';
+    x: number;
+    y: number;
+    amount?: number;
+  }>;
+  watchTowers?: Array<{
+    x: number;
+    y: number;
+    radius: number;
+  }>;
+  // Player slots with type and AI difficulty
+  playerSlots?: PlayerSlotInfo[];
+}
+
+/**
+ * Performance metrics sent from worker to main thread.
+ * Only sent when performance collection is enabled (panel is open).
+ * Uses flat arrays for efficient serialization.
+ */
+export interface WorkerPerformanceMetrics {
+  tickTime: number;
+  // Tuple array [systemName, durationMs] for efficient serialization
+  systemTimings: Array<[string, number]>;
+  // [units, buildings, resources, projectiles]
+  entityCounts: [number, number, number, number];
+}
+
+/**
+ * Messages sent FROM game worker TO main thread
+ */
+export type WorkerToMainMessage =
+  | { type: 'initialized'; success: boolean; error?: string }
+  | { type: 'renderState'; state: SerializedRenderState }
+  | { type: 'events'; events: GameEvent[] }
+  | { type: 'checksum'; tick: number; checksum: string }
+  | { type: 'gameOver'; winnerId: string | null; reason: string }
+  | { type: 'error'; message: string; stack?: string }
+  | { type: 'multiplayerCommand'; command: GameCommand }
+  | { type: 'desync'; tick: number; localChecksum: string; remoteChecksum: string }
+  | { type: 'performanceMetrics'; metrics: WorkerPerformanceMetrics }
+  | { type: 'pathTelemetry'; event: PathTelemetryEvent };
+
+// ============================================================================
+// GAME COMMAND - Re-export from shared module for consistency
+// ============================================================================
+
+export type { GameCommand } from '../core/GameCommand';
+
+// ============================================================================
+// TYPED ARRAY HELPERS - For efficient serialization
+// ============================================================================
+
+/**
+ * Pack transform data into a Float32Array for efficient transfer.
+ * Layout: [x, y, z, rotation, scaleX, scaleY, scaleZ, prevX, prevY, prevZ, prevRotation]
+ * 11 floats = 44 bytes per entity
+ */
+export const TRANSFORM_FLOATS_PER_ENTITY = 11;
+
+export function packTransforms(
+  entities: Array<{
+    x: number;
+    y: number;
+    z: number;
+    rotation: number;
+    scaleX: number;
+    scaleY: number;
+    scaleZ: number;
+    prevX: number;
+    prevY: number;
+    prevZ: number;
+    prevRotation: number;
+  }>
+): Float32Array {
+  const buffer = new Float32Array(entities.length * TRANSFORM_FLOATS_PER_ENTITY);
+  let offset = 0;
+  for (const e of entities) {
+    buffer[offset++] = e.x;
+    buffer[offset++] = e.y;
+    buffer[offset++] = e.z;
+    buffer[offset++] = e.rotation;
+    buffer[offset++] = e.scaleX;
+    buffer[offset++] = e.scaleY;
+    buffer[offset++] = e.scaleZ;
+    buffer[offset++] = e.prevX;
+    buffer[offset++] = e.prevY;
+    buffer[offset++] = e.prevZ;
+    buffer[offset++] = e.prevRotation;
+  }
+  return buffer;
+}
+
+export function unpackTransform(
+  buffer: Float32Array,
+  index: number
+): {
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  scaleZ: number;
+  prevX: number;
+  prevY: number;
+  prevZ: number;
+  prevRotation: number;
+} {
+  const offset = index * TRANSFORM_FLOATS_PER_ENTITY;
+  return {
+    x: buffer[offset],
+    y: buffer[offset + 1],
+    z: buffer[offset + 2],
+    rotation: buffer[offset + 3],
+    scaleX: buffer[offset + 4],
+    scaleY: buffer[offset + 5],
+    scaleZ: buffer[offset + 6],
+    prevX: buffer[offset + 7],
+    prevY: buffer[offset + 8],
+    prevZ: buffer[offset + 9],
+    prevRotation: buffer[offset + 10],
+  };
+}

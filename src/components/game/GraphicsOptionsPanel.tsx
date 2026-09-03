@@ -1,0 +1,1159 @@
+'use client';
+
+import React, { useEffect, useState, memo, useCallback } from 'react';
+import { useUIStore, GraphicsSettings, AntiAliasingMode, UpscalingMode, ResolutionMode, FixedResolution, FIXED_RESOLUTIONS, GraphicsPresetName } from '@/store/uiStore';
+import { BasePanel } from './BasePanel';
+
+// ============================================
+// COMPACT UI COMPONENTS
+// ============================================
+
+/** Compact toggle switch */
+const Toggle = memo(function Toggle({
+  enabled,
+  onChange,
+  disabled = false
+}: {
+  enabled: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onChange}
+      disabled={disabled}
+      style={{
+        width: '36px',
+        height: '18px',
+        borderRadius: '9px',
+        border: 'none',
+        backgroundColor: disabled ? '#333' : enabled ? '#22c55e' : '#444',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        position: 'relative',
+        transition: 'background-color 0.15s',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <div style={{
+        width: '14px',
+        height: '14px',
+        borderRadius: '7px',
+        backgroundColor: '#fff',
+        position: 'absolute',
+        top: '2px',
+        left: enabled ? '20px' : '2px',
+        transition: 'left 0.15s',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+      }} />
+    </button>
+  );
+});
+
+/** Segmented control for mode selection */
+const SegmentedControl = memo(function SegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  disabled = false,
+  disabledOptions = [],
+}: {
+  options: { value: T; label: string; hint?: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  disabledOptions?: T[];
+}) {
+  return (
+    <div style={{
+      display: 'flex',
+      backgroundColor: '#222',
+      borderRadius: '4px',
+      padding: '2px',
+      gap: '2px',
+    }}>
+      {options.map((opt) => {
+        const isDisabled = disabled || disabledOptions.includes(opt.value);
+        return (
+          <button
+            key={opt.value}
+            onClick={() => !isDisabled && onChange(opt.value)}
+            disabled={isDisabled}
+            title={opt.hint}
+            style={{
+              flex: 1,
+              padding: '4px 8px',
+              fontSize: '10px',
+              border: 'none',
+              borderRadius: '3px',
+              backgroundColor: value === opt.value ? '#3b82f6' : 'transparent',
+              color: isDisabled ? '#555' : value === opt.value ? '#fff' : '#888',
+              cursor: isDisabled ? 'not-allowed' : 'pointer',
+              transition: 'all 0.15s',
+              opacity: isDisabled ? 0.5 : 1,
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+});
+
+/** Compact slider with inline value */
+const CompactSlider = memo(function CompactSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  disabled = false,
+  format = (v: number) => v.toFixed(2),
+  suffix = '',
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+  format?: (value: number) => string;
+  suffix?: string;
+}) {
+  return (
+    <div style={{ marginBottom: '6px', opacity: disabled ? 0.5 : 1 }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '2px',
+      }}>
+        <span style={{ fontSize: '11px', color: '#999' }}>{label}</span>
+        <span style={{ fontSize: '10px', color: '#666', fontFamily: 'monospace' }}>
+          {format(value)}{suffix}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        disabled={disabled}
+        style={{
+          width: '100%',
+          height: '4px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          accentColor: '#3b82f6',
+        }}
+      />
+    </div>
+  );
+});
+
+/** Collapsible section header */
+const SectionHeader = memo(function SectionHeader({
+  title,
+  expanded,
+  onToggle,
+  badge,
+  masterToggle,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  badge?: 'performance' | 'quality';
+  masterToggle?: { enabled: boolean; onChange: () => void };
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 0',
+        cursor: 'pointer',
+        borderBottom: expanded ? '1px solid #333' : 'none',
+        marginBottom: expanded ? '8px' : 0,
+      }}
+    >
+      <div
+        onClick={onToggle}
+        style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}
+      >
+        <span style={{
+          fontSize: '10px',
+          color: '#666',
+          transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+          transition: 'transform 0.15s',
+        }}>▶</span>
+        <span style={{ fontSize: '12px', fontWeight: 500, color: '#ddd' }}>{title}</span>
+        {badge && (
+          <span style={{
+            fontSize: '8px',
+            padding: '1px 4px',
+            borderRadius: '3px',
+            backgroundColor: badge === 'performance' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+            color: badge === 'performance' ? '#eab308' : '#22c55e',
+            textTransform: 'uppercase',
+          }}>
+            {badge === 'performance' ? 'GPU' : '품질'}
+          </span>
+        )}
+      </div>
+      {masterToggle && (
+        <Toggle enabled={masterToggle.enabled} onChange={masterToggle.onChange} />
+      )}
+    </div>
+  );
+});
+
+/** Row with toggle and label */
+const ToggleRow = memo(function ToggleRow({
+  label,
+  enabled,
+  onChange,
+  disabled = false,
+  indent = false,
+  hint,
+}: {
+  label: string;
+  enabled: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+  indent?: boolean;
+  hint?: string;
+}) {
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '6px',
+      marginLeft: indent ? '12px' : 0,
+    }}>
+      <span
+        style={{ fontSize: '11px', color: disabled ? '#666' : '#aaa' }}
+        title={hint}
+      >
+        {label}
+        {hint && <span style={{ marginLeft: '4px', color: '#555' }}>ⓘ</span>}
+      </span>
+      <Toggle enabled={enabled} onChange={onChange} disabled={disabled} />
+    </div>
+  );
+});
+
+/** Info/Warning hint box */
+const HintBox = memo(function HintBox({
+  type = 'info',
+  children,
+}: {
+  type?: 'info' | 'warning';
+  children: React.ReactNode;
+}) {
+  const colors = {
+    info: { bg: 'rgba(59, 130, 246, 0.1)', border: '#3b82f640', text: '#93c5fd' },
+    warning: { bg: 'rgba(234, 179, 8, 0.1)', border: '#eab30840', text: '#fcd34d' },
+  };
+  const c = colors[type];
+
+  return (
+    <div style={{
+      fontSize: '9px',
+      padding: '6px 8px',
+      marginBottom: '8px',
+      borderRadius: '4px',
+      backgroundColor: c.bg,
+      border: `1px solid ${c.border}`,
+      color: c.text,
+      lineHeight: 1.4,
+    }}>
+      {type === 'warning' && '⚠ '}
+      {children}
+    </div>
+  );
+});
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
+/**
+ * Graphics Options Panel - AAA Quality
+ * Compact, organized, professional design
+ */
+export const GraphicsOptionsPanel = memo(function GraphicsOptionsPanel() {
+  // Store state
+  const showGraphicsOptions = useUIStore((state) => state.showGraphicsOptions);
+  const graphicsSettings = useUIStore((state) => state.graphicsSettings);
+  const rendererAPI = useUIStore((state) => state.rendererAPI);
+  const gpuInfo = useUIStore((state) => state.gpuInfo);
+  const toggleGraphicsOptions = useUIStore((state) => state.toggleGraphicsOptions);
+  const toggleGraphicsSetting = useUIStore((state) => state.toggleGraphicsSetting);
+  const setGraphicsSetting = useUIStore((state) => state.setGraphicsSetting);
+  const setAntiAliasingMode = useUIStore((state) => state.setAntiAliasingMode);
+  const setUpscalingMode = useUIStore((state) => state.setUpscalingMode);
+  const setResolutionMode = useUIStore((state) => state.setResolutionMode);
+  const setFixedResolution = useUIStore((state) => state.setFixedResolution);
+  const setMaxFPS = useUIStore((state) => state.setMaxFPS);
+  // Preset state
+  const currentPreset = useUIStore((state) => state.currentGraphicsPreset);
+  const presetsLoaded = useUIStore((state) => state.graphicsPresetsLoaded);
+  const presetsConfig = useUIStore((state) => state.graphicsPresetsConfig);
+  const loadPresets = useUIStore((state) => state.loadGraphicsPresets);
+  const applyPreset = useUIStore((state) => state.applyGraphicsPreset);
+
+  // Section expansion state
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    resolution: false,
+    performance: false,
+    antialiasing: false,
+    lighting: false,
+    reflections: false,
+    gi: false,
+    effects: false,
+    water: false,
+    color: false,
+  });
+
+  const toggleSection = useCallback((section: string) => {
+    setExpanded(prev => ({ ...prev, [section]: !prev[section] }));
+  }, []);
+
+  // Load presets when panel opens
+  useEffect(() => {
+    if (showGraphicsOptions && !presetsLoaded) {
+      loadPresets();
+    }
+  }, [showGraphicsOptions, presetsLoaded, loadPresets]);
+
+  // NOTE: Edge scrolling is now controlled centrally by HUD.tsx via isAnyMenuOpen selector
+  // No individual edge scroll effect needed here
+
+  if (!showGraphicsOptions) return null;
+
+  const handleToggle = (key: keyof GraphicsSettings) => {
+    toggleGraphicsSetting(key);
+  };
+
+  const isWebGPU = rendererAPI === 'WebGPU';
+
+  // FSR compatibility checks
+  // FSR (EASU) requires TAA because it needs a texture node with .sample() support
+  const fsrActive = graphicsSettings.upscalingMode === 'easu' && graphicsSettings.renderScale < 1;
+  const fsrRequiresTaa = graphicsSettings.upscalingMode === 'easu';
+
+  return (
+    <BasePanel
+      title="그래픽"
+      onClose={toggleGraphicsOptions}
+      width={280}
+      badge={{
+        text: rendererAPI || '알 수 없음',
+        color: isWebGPU ? 'green' : 'yellow',
+      }}
+      testId="graphics-options-panel"
+    >
+
+      {/* GPU Info */}
+      {gpuInfo && (
+        <div style={{
+          marginBottom: '12px',
+          padding: '8px 10px',
+          backgroundColor: gpuInfo.isIntegrated ? 'rgba(234, 179, 8, 0.08)' : '#1a1a1c',
+          borderRadius: '6px',
+          border: gpuInfo.isIntegrated ? '1px solid rgba(234, 179, 8, 0.2)' : 'none',
+        }}>
+          <div style={{
+            fontSize: '10px',
+            color: '#666',
+            marginBottom: '4px',
+          }}>
+            그래픽 어댑터
+          </div>
+          <div style={{
+            fontSize: '11px',
+            color: gpuInfo.isIntegrated ? '#eab308' : '#ddd',
+            fontWeight: 500,
+          }}>
+            {gpuInfo.name}
+          </div>
+          {gpuInfo.isIntegrated && (
+            <div style={{
+              fontSize: '9px',
+              color: '#b59420',
+              marginTop: '6px',
+              lineHeight: 1.4,
+            }}>
+              내장 GPU가 감지되었습니다. 더 나은 성능을 위해 외장 GPU를 사용하도록 시스템을 설정하세요 (NVIDIA 제어판 또는 AMD Radeon 설정).
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Preset Selector */}
+      <div style={{
+        marginBottom: '12px',
+        padding: '8px 10px',
+        backgroundColor: '#1a1a1c',
+        borderRadius: '6px',
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '8px',
+        }}>
+          <span style={{ fontSize: '11px', fontWeight: 500 }}>품질 프리셋</span>
+          {currentPreset === 'custom' && (
+            <span style={{
+              fontSize: '9px',
+              padding: '2px 6px',
+              borderRadius: '3px',
+              backgroundColor: 'rgba(234, 179, 8, 0.15)',
+              color: '#eab308',
+            }}>
+              수정됨
+            </span>
+          )}
+        </div>
+        <div style={{
+          display: 'flex',
+          gap: '4px',
+        }}>
+          {(['low', 'medium', 'high', 'ultra'] as GraphicsPresetName[]).map((preset) => {
+            const presetInfo = presetsConfig?.presets[preset];
+            const isSelected = currentPreset === preset;
+            return (
+              <button
+                key={preset}
+                onClick={() => applyPreset(preset)}
+                title={presetInfo?.description || preset}
+                style={{
+                  flex: 1,
+                  padding: '6px 4px',
+                  fontSize: '10px',
+                  fontWeight: isSelected ? 600 : 400,
+                  border: 'none',
+                  borderRadius: '4px',
+                  backgroundColor: isSelected ? '#3b82f6' : '#333',
+                  color: isSelected ? '#fff' : '#999',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {preset}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: '9px', color: '#555', marginTop: '6px' }}>
+          {presetsConfig?.presets[currentPreset]?.description ||
+           (currentPreset === 'custom' ? '사용자 설정' : '')}
+        </div>
+      </div>
+
+      {/* Master Post-Processing Toggle */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '8px 10px',
+        marginBottom: '12px',
+        backgroundColor: '#1a1a1c',
+        borderRadius: '6px',
+      }}>
+        <span style={{ fontSize: '11px', fontWeight: 500 }}>후처리</span>
+        <Toggle
+          enabled={graphicsSettings.postProcessingEnabled}
+          onChange={() => handleToggle('postProcessingEnabled')}
+        />
+      </div>
+
+      {/* ===== RESOLUTION ===== */}
+      <SectionHeader
+        title="해상도"
+        expanded={expanded.resolution}
+        onToggle={() => toggleSection('resolution')}
+      />
+      {expanded.resolution && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+              해상도 모드
+            </span>
+            <SegmentedControl
+              options={[
+                { value: 'native', label: '기본' },
+                { value: 'fixed', label: '고정' },
+                { value: 'percentage', label: '배율' },
+              ]}
+              value={graphicsSettings.resolutionMode}
+              onChange={(v) => setResolutionMode(v as ResolutionMode)}
+            />
+            <div style={{ fontSize: '9px', color: '#555', marginTop: '4px' }}>
+              {graphicsSettings.resolutionMode === 'native' && '창 크기에 DPR 상한 적용'}
+              {graphicsSettings.resolutionMode === 'fixed' && '고정 해상도로 렌더링'}
+              {graphicsSettings.resolutionMode === 'percentage' && '기본 해상도의 백분율'}
+            </div>
+          </div>
+
+          {graphicsSettings.resolutionMode === 'fixed' && (
+            <div style={{ marginBottom: '8px' }}>
+              <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+                대상 해상도
+              </span>
+              <SegmentedControl
+                options={[
+                  { value: '720p', label: '720p' },
+                  { value: '1080p', label: '1080p' },
+                  { value: '1440p', label: '1440p' },
+                  { value: '4k', label: '4K' },
+                ]}
+                value={graphicsSettings.fixedResolution}
+                onChange={(v) => setFixedResolution(v as FixedResolution)}
+              />
+              <div style={{ fontSize: '9px', color: '#555', marginTop: '4px' }}>
+                {FIXED_RESOLUTIONS[graphicsSettings.fixedResolution].label}
+              </div>
+            </div>
+          )}
+
+          {graphicsSettings.resolutionMode === 'percentage' && (
+            <CompactSlider
+              label="해상도 배율"
+              value={graphicsSettings.resolutionScale}
+              min={0.5}
+              max={1}
+              step={0.05}
+              onChange={(v) => setGraphicsSetting('resolutionScale', v)}
+              format={(v) => `${Math.round(v * 100)}`}
+              suffix="%"
+            />
+          )}
+
+          <CompactSlider
+            label="최대 픽셀 비율"
+            value={graphicsSettings.maxPixelRatio}
+            min={1}
+            max={3}
+            step={0.5}
+            onChange={(v) => setGraphicsSetting('maxPixelRatio', v)}
+            format={(v) => v.toFixed(1)}
+            suffix="x"
+          />
+          <div style={{ fontSize: '9px', color: '#555', marginTop: '2px', marginBottom: '8px' }}>
+            고DPI 렌더링 상한 (낮을수록 Retina/4K 디스플레이에서 빨라짐)
+          </div>
+
+          {/* Frame Rate Limit */}
+          <div style={{ marginTop: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+              프레임 속도 제한
+            </span>
+            <SegmentedControl
+              options={[
+                { value: '0', label: '끄기', hint: '무제한 프레임 속도' },
+                { value: '60', label: '60' },
+                { value: '120', label: '120' },
+                { value: '144', label: '144' },
+              ]}
+              value={graphicsSettings.maxFPS.toString()}
+              onChange={(v) => setMaxFPS(parseInt(v))}
+            />
+            <div style={{ fontSize: '9px', color: '#555', marginTop: '4px' }}>
+              {graphicsSettings.maxFPS === 0
+                ? '프레임 속도 제한 없음 (전력 더 사용)'
+                : `${graphicsSettings.maxFPS} FPS로 제한 (전력 절약, 발열 감소)`}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== PERFORMANCE ===== */}
+      <SectionHeader
+        title="업스케일링"
+        expanded={expanded.performance}
+        onToggle={() => toggleSection('performance')}
+        badge="performance"
+      />
+      {expanded.performance && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+              업스케일링 모드
+            </span>
+            <SegmentedControl
+              options={[
+                { value: 'off', label: '기본' },
+                { value: 'easu', label: 'FSR', hint: 'TAA 안티앨리어싱 필요' },
+                { value: 'bilinear', label: '쌍선형' },
+              ]}
+              value={graphicsSettings.upscalingMode}
+              onChange={(v) => {
+                // Auto-enable TAA when FSR is selected
+                if (v === 'easu' && graphicsSettings.antiAliasingMode !== 'taa') {
+                  setAntiAliasingMode('taa');
+                }
+                setUpscalingMode(v as UpscalingMode);
+              }}
+            />
+            <div style={{ fontSize: '9px', color: '#555', marginTop: '4px' }}>
+              {graphicsSettings.upscalingMode === 'off' && '전체 해상도 렌더링'}
+              {graphicsSettings.upscalingMode === 'easu' && 'AMD FSR 1.0 에지 적응형 업스케일링'}
+              {graphicsSettings.upscalingMode === 'bilinear' && '빠른 GPU 쌍선형 필터링'}
+            </div>
+          </div>
+
+          {/* FSR requires TAA warning */}
+          {graphicsSettings.upscalingMode === 'easu' && graphicsSettings.antiAliasingMode !== 'taa' && (
+            <HintBox type="warning">
+              FSR은 에지 적응형 업스케일링을 위해 TAA가 필요합니다. TAA가 자동으로 활성화되었습니다.
+            </HintBox>
+          )}
+
+          {graphicsSettings.upscalingMode !== 'off' && (
+            <>
+              <CompactSlider
+                label="렌더 배율"
+                value={graphicsSettings.renderScale}
+                min={0.5}
+                max={1}
+                step={0.05}
+                onChange={(v) => setGraphicsSetting('renderScale', v)}
+                format={(v) => `${Math.round(v * 100)}`}
+                suffix="%"
+              />
+              {graphicsSettings.upscalingMode === 'easu' && (
+                <CompactSlider
+                  label="에지 선명도"
+                  value={graphicsSettings.easuSharpness}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setGraphicsSetting('easuSharpness', v)}
+                />
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ===== ANTI-ALIASING ===== */}
+      <SectionHeader
+        title="안티앨리어싱"
+        expanded={expanded.antialiasing}
+        onToggle={() => toggleSection('antialiasing')}
+        badge="quality"
+      />
+      {expanded.antialiasing && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <SegmentedControl
+              options={[
+                { value: 'off', label: '끄기', hint: fsrRequiresTaa ? '비활성: FSR에는 TAA 필요' : undefined },
+                { value: 'fxaa', label: 'FXAA', hint: fsrRequiresTaa ? '비활성: FSR에는 TAA 필요' : undefined },
+                { value: 'taa', label: 'TAA' },
+              ]}
+              value={graphicsSettings.antiAliasingMode}
+              onChange={(v) => {
+                // If FSR is enabled and user tries to switch away from TAA, switch FSR to bilinear
+                if (graphicsSettings.upscalingMode === 'easu' && v !== 'taa') {
+                  setUpscalingMode('bilinear');
+                }
+                setAntiAliasingMode(v as AntiAliasingMode);
+              }}
+              disabledOptions={fsrRequiresTaa ? ['off', 'fxaa'] : []}
+            />
+            {fsrRequiresTaa && (
+              <div style={{ fontSize: '9px', color: '#eab308', marginTop: '4px' }}>
+                TAA required for FSR upscaling
+              </div>
+            )}
+          </div>
+          {graphicsSettings.antiAliasingMode === 'taa' && (
+            <>
+              {/* Sharpening is disabled when FSR is active (FSR has its own edge enhancement) */}
+              {fsrActive ? (
+                <HintBox type="info">
+                  RCAS sharpening disabled when FSR is active (FSR includes edge enhancement)
+                </HintBox>
+              ) : (
+                <>
+                  <ToggleRow
+                    label="RCAS 선명화"
+                    enabled={graphicsSettings.taaSharpeningEnabled}
+                    onChange={() => handleToggle('taaSharpeningEnabled')}
+                  />
+                  {graphicsSettings.taaSharpeningEnabled && (
+                    <CompactSlider
+                      label="강도"
+                      value={graphicsSettings.taaSharpeningIntensity}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onChange={(v) => setGraphicsSetting('taaSharpeningIntensity', v)}
+                    />
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ===== LIGHTING ===== */}
+      <SectionHeader
+        title="조명 & 그림자"
+        expanded={expanded.lighting}
+        onToggle={() => toggleSection('lighting')}
+        badge="performance"
+      />
+      {expanded.lighting && (
+        <div style={{ marginBottom: '12px' }}>
+          {/* Shadows */}
+          <ToggleRow
+            label="그림자"
+            enabled={graphicsSettings.shadowsEnabled}
+            onChange={() => handleToggle('shadowsEnabled')}
+          />
+          {graphicsSettings.shadowsEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <div style={{ marginBottom: '6px' }}>
+                <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+                  Quality
+                </span>
+                <SegmentedControl
+                  options={[
+                    { value: 'low', label: '낮음' },
+                    { value: 'medium', label: '중간' },
+                    { value: 'high', label: '높음' },
+                    { value: 'ultra', label: '최고' },
+                  ]}
+                  value={graphicsSettings.shadowQuality}
+                  onChange={(v) => setGraphicsSetting('shadowQuality', v as 'low' | 'medium' | 'high' | 'ultra')}
+                />
+              </div>
+              <CompactSlider
+                label="거리"
+                value={graphicsSettings.shadowDistance}
+                min={50}
+                max={200}
+                step={10}
+                onChange={(v) => setGraphicsSetting('shadowDistance', v)}
+                format={(v) => v.toString()}
+              />
+            </div>
+          )}
+
+          {/* Ambient Occlusion */}
+          <ToggleRow
+            label="환경 차폐"
+            enabled={graphicsSettings.ssaoEnabled}
+            onChange={() => handleToggle('ssaoEnabled')}
+          />
+          {graphicsSettings.ssaoEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <CompactSlider
+                label="반경"
+                value={graphicsSettings.ssaoRadius}
+                min={1}
+                max={16}
+                step={0.5}
+                onChange={(v) => setGraphicsSetting('ssaoRadius', v)}
+                format={(v) => v.toFixed(1)}
+              />
+              <CompactSlider
+                label="강도"
+                value={graphicsSettings.ssaoIntensity}
+                min={0}
+                max={2}
+                step={0.1}
+                onChange={(v) => setGraphicsSetting('ssaoIntensity', v)}
+              />
+            </div>
+          )}
+
+          {/* Shadow Fill - ground bounce light */}
+          <CompactSlider
+            label="그림자 채움"
+            value={graphicsSettings.shadowFill}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(v) => setGraphicsSetting('shadowFill', v)}
+            format={(v) => `${Math.round(v * 100)}%`}
+          />
+          <div style={{ fontSize: '9px', color: '#555', marginTop: '-4px', marginBottom: '8px' }}>
+            Brightens shadowed areas with ground-bounce light
+          </div>
+
+          {/* Environment */}
+          <ToggleRow
+            label="환경 조명"
+            enabled={graphicsSettings.environmentMapEnabled}
+            onChange={() => handleToggle('environmentMapEnabled')}
+          />
+
+          {/* Dynamic Lights */}
+          <ToggleRow
+            label="동적 광원"
+            enabled={graphicsSettings.dynamicLightsEnabled}
+            onChange={() => handleToggle('dynamicLightsEnabled')}
+          />
+          {graphicsSettings.dynamicLightsEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <div style={{ marginBottom: '6px' }}>
+                <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+                  Max Lights
+                </span>
+                <SegmentedControl
+                  options={[
+                    { value: '4', label: '4' },
+                    { value: '8', label: '8' },
+                    { value: '16', label: '16' },
+                    { value: '32', label: '32' },
+                  ]}
+                  value={graphicsSettings.maxDynamicLights.toString()}
+                  onChange={(v) => setGraphicsSetting('maxDynamicLights', parseInt(v))}
+                />
+              </div>
+              <div style={{ fontSize: '9px', color: '#555' }}>
+                For explosions, muzzle flash, abilities
+              </div>
+            </div>
+          )}
+
+          {/* Emissive Decorations */}
+          <ToggleRow
+            label="발광 장식"
+            enabled={graphicsSettings.emissiveDecorationsEnabled}
+            onChange={() => handleToggle('emissiveDecorationsEnabled')}
+          />
+          {graphicsSettings.emissiveDecorationsEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <CompactSlider
+                label="발광 강도"
+                value={graphicsSettings.emissiveIntensityMultiplier}
+                min={0.5}
+                max={2}
+                step={0.1}
+                onChange={(v) => setGraphicsSetting('emissiveIntensityMultiplier', v)}
+                format={(v) => `${v.toFixed(1)}x`}
+              />
+              <div style={{ fontSize: '9px', color: '#555' }}>
+                Crystals, alien structures glow
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== REFLECTIONS ===== */}
+      <SectionHeader
+        title="반사"
+        expanded={expanded.reflections}
+        onToggle={() => toggleSection('reflections')}
+        badge="performance"
+        masterToggle={{
+          enabled: graphicsSettings.ssrEnabled,
+          onChange: () => handleToggle('ssrEnabled'),
+        }}
+      />
+      {expanded.reflections && graphicsSettings.ssrEnabled && (
+        <div style={{ marginBottom: '12px' }}>
+          <CompactSlider
+            label="강도"
+            value={graphicsSettings.ssrOpacity}
+            min={0}
+            max={1}
+            step={0.1}
+            onChange={(v) => setGraphicsSetting('ssrOpacity', v)}
+          />
+          <CompactSlider
+            label="최대 거칠기"
+            value={graphicsSettings.ssrMaxRoughness}
+            min={0}
+            max={1}
+            step={0.1}
+            onChange={(v) => setGraphicsSetting('ssrMaxRoughness', v)}
+          />
+        </div>
+      )}
+
+      {/* ===== GLOBAL ILLUMINATION ===== */}
+      <SectionHeader
+        title="전역 조명"
+        expanded={expanded.gi}
+        onToggle={() => toggleSection('gi')}
+        badge="performance"
+        masterToggle={{
+          enabled: graphicsSettings.ssgiEnabled,
+          onChange: () => handleToggle('ssgiEnabled'),
+        }}
+      />
+      {expanded.gi && graphicsSettings.ssgiEnabled && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ fontSize: '9px', color: '#555', marginBottom: '8px' }}>
+            Realistic light bouncing between surfaces. Works best with TAA.
+          </div>
+          <CompactSlider
+            label="반경"
+            value={graphicsSettings.ssgiRadius}
+            min={1}
+            max={25}
+            step={1}
+            onChange={(v) => setGraphicsSetting('ssgiRadius', v)}
+            format={(v) => v.toString()}
+          />
+          <CompactSlider
+            label="강도"
+            value={graphicsSettings.ssgiIntensity}
+            min={0}
+            max={50}
+            step={1}
+            onChange={(v) => setGraphicsSetting('ssgiIntensity', v)}
+            format={(v) => v.toString()}
+          />
+        </div>
+      )}
+
+      {/* ===== EFFECTS ===== */}
+      <SectionHeader
+        title="효과"
+        expanded={expanded.effects}
+        onToggle={() => toggleSection('effects')}
+      />
+      {expanded.effects && (
+        <div style={{ marginBottom: '12px' }}>
+          {/* Bloom */}
+          <ToggleRow
+            label="블룸"
+            enabled={graphicsSettings.bloomEnabled}
+            onChange={() => handleToggle('bloomEnabled')}
+          />
+          {graphicsSettings.bloomEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <CompactSlider
+                label="강도"
+                value={graphicsSettings.bloomStrength}
+                min={0}
+                max={1.5}
+                step={0.05}
+                onChange={(v) => setGraphicsSetting('bloomStrength', v)}
+              />
+              <CompactSlider
+                label="임계값"
+                value={graphicsSettings.bloomThreshold}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={(v) => setGraphicsSetting('bloomThreshold', v)}
+              />
+              <CompactSlider
+                label="반경"
+                value={graphicsSettings.bloomRadius}
+                min={0}
+                max={2}
+                step={0.1}
+                onChange={(v) => setGraphicsSetting('bloomRadius', v)}
+              />
+            </div>
+          )}
+
+          {/* Fog */}
+          <ToggleRow
+            label="대기 안개"
+            enabled={graphicsSettings.fogEnabled}
+            onChange={() => handleToggle('fogEnabled')}
+          />
+          {graphicsSettings.fogEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <CompactSlider
+                label="밀도"
+                value={graphicsSettings.fogDensity}
+                min={0.5}
+                max={2}
+                step={0.1}
+                onChange={(v) => setGraphicsSetting('fogDensity', v)}
+                format={(v) => v.toFixed(1)}
+                suffix="x"
+              />
+
+              {/* Volumetric Fog */}
+              <div style={{ marginTop: '8px' }}>
+                <ToggleRow
+                  label="볼류메트릭 모드"
+                  enabled={graphicsSettings.volumetricFogEnabled}
+                  onChange={() => handleToggle('volumetricFogEnabled')}
+                />
+                {graphicsSettings.volumetricFogEnabled && (
+                  <div style={{ marginLeft: '12px', marginTop: '4px' }}>
+                    <div style={{ marginBottom: '6px' }}>
+                      <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+                        Quality
+                      </span>
+                      <SegmentedControl
+                        options={[
+                          { value: 'low', label: '낮음' },
+                          { value: 'medium', label: '중간' },
+                          { value: 'high', label: '높음' },
+                          { value: 'ultra', label: '최고' },
+                        ]}
+                        value={graphicsSettings.volumetricFogQuality}
+                        onChange={(v) => setGraphicsSetting('volumetricFogQuality', v as 'low' | 'medium' | 'high' | 'ultra')}
+                      />
+                    </div>
+                    <CompactSlider
+                      label="볼륨 밀도"
+                      value={graphicsSettings.volumetricFogDensity}
+                      min={0.5}
+                      max={2}
+                      step={0.1}
+                      onChange={(v) => setGraphicsSetting('volumetricFogDensity', v)}
+                      format={(v) => v.toFixed(1)}
+                      suffix="x"
+                    />
+                    <CompactSlider
+                      label="빛 산란"
+                      value={graphicsSettings.volumetricFogScattering}
+                      min={0}
+                      max={2}
+                      step={0.1}
+                      onChange={(v) => setGraphicsSetting('volumetricFogScattering', v)}
+                    />
+                    <div style={{ fontSize: '9px', color: '#555', marginTop: '4px' }}>
+                      Raymarched fog with light shafts
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Particles */}
+          <ToggleRow
+            label="파티클"
+            enabled={graphicsSettings.particlesEnabled}
+            onChange={() => handleToggle('particlesEnabled')}
+          />
+          {graphicsSettings.particlesEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <CompactSlider
+                label="밀도"
+                value={graphicsSettings.particleDensity}
+                min={1}
+                max={15}
+                step={0.5}
+                onChange={(v) => setGraphicsSetting('particleDensity', v)}
+                format={(v) => (v / 5).toFixed(1)}
+                suffix="x"
+              />
+            </div>
+          )}
+
+          {/* Vignette */}
+          <ToggleRow
+            label="비네트"
+            enabled={graphicsSettings.vignetteEnabled}
+            onChange={() => handleToggle('vignetteEnabled')}
+          />
+          {graphicsSettings.vignetteEnabled && (
+            <div style={{ marginLeft: '12px', marginBottom: '8px' }}>
+              <CompactSlider
+                label="강도"
+                value={graphicsSettings.vignetteIntensity}
+                min={0}
+                max={0.6}
+                step={0.05}
+                onChange={(v) => setGraphicsSetting('vignetteIntensity', v)}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== WATER ===== */}
+      <SectionHeader
+        title="물"
+        expanded={expanded.water}
+        onToggle={() => toggleSection('water')}
+        badge="performance"
+        masterToggle={{
+          enabled: graphicsSettings.waterEnabled,
+          onChange: () => handleToggle('waterEnabled'),
+        }}
+      />
+      {expanded.water && graphicsSettings.waterEnabled && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <span style={{ fontSize: '10px', color: '#666', display: 'block', marginBottom: '4px' }}>
+              Quality
+            </span>
+            <SegmentedControl
+              options={[
+                { value: 'low', label: '낮음' },
+                { value: 'medium', label: '중간' },
+                { value: 'high', label: '높음' },
+                { value: 'ultra', label: '최고' },
+              ]}
+              value={graphicsSettings.waterQuality}
+              onChange={(v) => setGraphicsSetting('waterQuality', v as 'low' | 'medium' | 'high' | 'ultra')}
+            />
+            <div style={{ fontSize: '9px', color: '#555', marginTop: '4px' }}>
+              Controls wave detail and texture resolution
+            </div>
+          </div>
+          <ToggleRow
+            label="반사"
+            enabled={graphicsSettings.waterReflectionsEnabled}
+            onChange={() => handleToggle('waterReflectionsEnabled')}
+          />
+          <div style={{ fontSize: '9px', color: '#555', marginLeft: '12px' }}>
+            Real-time scene reflections on water surface
+          </div>
+        </div>
+      )}
+
+      {/* ===== COLOR GRADING ===== */}
+      <SectionHeader
+        title="색상"
+        expanded={expanded.color}
+        onToggle={() => toggleSection('color')}
+      />
+      {expanded.color && (
+        <div style={{ marginBottom: '12px' }}>
+          <CompactSlider
+            label="노출"
+            value={graphicsSettings.toneMappingExposure}
+            min={0.5}
+            max={2}
+            step={0.05}
+            onChange={(v) => setGraphicsSetting('toneMappingExposure', v)}
+          />
+          <CompactSlider
+            label="채도"
+            value={graphicsSettings.saturation}
+            min={0.5}
+            max={1.5}
+            step={0.05}
+            onChange={(v) => setGraphicsSetting('saturation', v)}
+          />
+          <CompactSlider
+            label="대비"
+            value={graphicsSettings.contrast}
+            min={0.8}
+            max={1.3}
+            step={0.05}
+            onChange={(v) => setGraphicsSetting('contrast', v)}
+          />
+        </div>
+      )}
+    </BasePanel>
+  );
+});

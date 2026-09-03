@@ -1,0 +1,540 @@
+import { useGameStore } from '@/store/gameStore';
+import { getLocalPlayerId } from '@/store/gameSetupStore';
+import type { GameCommand } from '@/engine/core/GameCommand';
+import { getWorkerBridge, getRenderStateAdapter } from '@/engine/workers';
+import { UNIT_DEFINITIONS } from '@/data/units/dominion';
+import { BUILDING_DEFINITIONS, RESEARCH_MODULE_UNITS } from '@/data/buildings/dominion';
+import { RESEARCH_DEFINITIONS } from '@/data/research/dominion';
+import { getAttackTypeText } from '@/utils/commandIcons';
+import { CommandButtonData } from '../types';
+import { BUILDING_RESEARCH_MAP } from '../constants';
+
+interface UseBuildingCommandsParams {
+  selectedUnits: number[];
+  minerals: number;
+  plasma: number;
+  supply: number;
+  maxSupply: number;
+}
+
+/**
+ * Generate commands for selected buildings.
+ */
+export function useBuildingCommands({
+  selectedUnits,
+  minerals,
+  plasma,
+  supply,
+  maxSupply,
+}: UseBuildingCommandsParams): CommandButtonData[] {
+  const bridge = getWorkerBridge();
+  const worldAdapter = getRenderStateAdapter();
+
+  if (!bridge || selectedUnits.length === 0) return [];
+
+  const entity = worldAdapter.getEntity(selectedUnits[0]);
+  if (!entity) return [];
+
+  const building = entity.get<{
+    buildingId: string;
+    playerId: string;
+    state: string;
+    buildProgress: number;
+    width: number;
+    height: number;
+    isFlying?: boolean;
+    canProduce?: string[];
+    canLiftOff?: boolean;
+    canUpgradeTo?: string[];
+    canHaveAddon?: boolean;
+    productionQueue?: {
+      id: string;
+      type: string;
+      progress: number;
+      buildTime: number;
+      supplyAllocated: boolean;
+      produceCount?: number;
+    }[];
+    isComplete?: () => boolean;
+    hasAddon?: () => boolean;
+    hasTechLab?: () => boolean;
+  }>('Building');
+
+  if (!building) return [];
+
+  const buttons: CommandButtonData[] = [];
+  const isComplete = building.isComplete?.() ?? building.state === 'complete';
+  const isFlying =
+    building.state === 'flying' || building.state === 'lifting' || building.state === 'landing';
+  const issueCommand = (command: Omit<GameCommand, 'tick' | 'playerId'>): void => {
+    const localPlayer = getLocalPlayerId();
+    if (!localPlayer) return;
+
+    bridge.issueCommand({
+      ...command,
+      tick: bridge.currentTick,
+      playerId: localPlayer,
+    });
+  };
+
+  // Building under construction
+  if (!isComplete && building.state !== 'destroyed' && !isFlying) {
+    buttons.push({
+      id: 'demolish',
+      label: '취소',
+      shortcut: 'ESC',
+      action: () => {
+        issueCommand({
+          type: 'DEMOLISH',
+          entityIds: selectedUnits,
+        });
+      },
+      tooltip: 'Cancel construction (refunds 75% of resources spent)',
+    });
+    return buttons;
+  }
+
+  // Complete or flying buildings
+  if (!isComplete && !isFlying) return [];
+
+  // Wall/gate commands
+  const wall = entity.get<{
+    isWall?: boolean;
+    isGate?: boolean;
+    gateOpenProgress?: number;
+    gateState?: string;
+    appliedUpgrade?: string;
+    upgradeInProgress?: boolean;
+    mountedTurretId?: string;
+  }>('Wall');
+
+  if (wall && !isFlying) {
+    if (wall.isGate) {
+      buttons.push({
+        id: 'gate_toggle',
+        label: (wall.gateOpenProgress ?? 0) > 0.5 ? '닫기' : '열기',
+        shortcut: 'O',
+        action: () => {
+          issueCommand({
+            type: 'GATE_TOGGLE',
+            entityIds: selectedUnits,
+          });
+        },
+        tooltip: (wall.gateOpenProgress ?? 0) > 0.5 ? '게이트 닫기' : '게이트 열기',
+      });
+
+      buttons.push({
+        id: 'gate_lock',
+        label: wall.gateState === 'locked' ? '잠금 해제' : '잠금',
+        shortcut: 'L',
+        action: () => {
+          issueCommand({
+            type: 'GATE_LOCK',
+            entityIds: selectedUnits,
+          });
+        },
+        tooltip:
+          wall.gateState === 'locked' ? '게이트 잠금 해제' : '게이트 잠금 (열기 방지)',
+      });
+
+      if (wall.gateState !== 'auto') {
+        buttons.push({
+          id: 'gate_auto',
+          label: '자동',
+          shortcut: 'A',
+          action: () => {
+            issueCommand({
+              type: 'GATE_AUTO',
+              entityIds: selectedUnits,
+            });
+          },
+          tooltip: 'Set gate to auto-open for friendly units',
+        });
+      }
+    }
+
+    // Wall upgrades
+    const store = useGameStore.getState();
+    const localPlayer = getLocalPlayerId() ?? 'player1';
+
+    if (!wall.appliedUpgrade && wall.upgradeInProgress === null) {
+      if (store.hasResearch(localPlayer, 'wall_reinforced')) {
+        buttons.push({
+          id: 'wall_upgrade_reinforced',
+          label: '강화',
+          shortcut: 'R',
+          action: () => {
+            issueCommand({
+              type: 'WALL_UPGRADE',
+              entityIds: selectedUnits,
+              upgradeType: 'reinforced',
+            });
+          },
+          tooltip: 'Reinforce wall: +400 HP, +2 armor',
+          cost: { minerals: 25, plasma: 0 },
+        });
+      }
+
+      if (store.hasResearch(localPlayer, 'wall_shielded')) {
+        buttons.push({
+          id: 'wall_upgrade_shielded',
+          label: '방어막',
+          shortcut: 'S',
+          action: () => {
+            issueCommand({
+              type: 'WALL_UPGRADE',
+              entityIds: selectedUnits,
+              upgradeType: 'shielded',
+            });
+          },
+          tooltip: 'Add shield: +200 regenerating shield',
+          cost: { minerals: 50, plasma: 25 },
+        });
+      }
+
+      if (store.hasResearch(localPlayer, 'wall_weapon') && wall.mountedTurretId === null) {
+        buttons.push({
+          id: 'wall_upgrade_weapon',
+          label: '무기',
+          shortcut: 'W',
+          action: () => {
+            issueCommand({
+              type: 'WALL_UPGRADE',
+              entityIds: selectedUnits,
+              upgradeType: 'weapon',
+            });
+          },
+          tooltip: 'Add auto-turret: 5 damage, 6 range',
+          cost: { minerals: 40, plasma: 25 },
+        });
+      }
+    }
+  }
+
+  // Tech-gated units
+  const techUnits = RESEARCH_MODULE_UNITS[building.buildingId] || [];
+  const hasTechLab = (building.hasAddon?.() ?? false) && (building.hasTechLab?.() ?? false);
+
+  // Training commands (skip when flying)
+  if (!isFlying && building.canProduce) {
+    building.canProduce.forEach((unitId) => {
+      const unitDef = UNIT_DEFINITIONS[unitId];
+      if (!unitDef) return;
+
+      const canAfford = minerals >= unitDef.mineralCost && plasma >= unitDef.plasmaCost;
+      const hasSupply = supply + unitDef.supplyCost <= maxSupply;
+      const attackTypeText = getAttackTypeText(unitDef);
+
+      buttons.push({
+        id: `train_${unitId}`,
+        label: unitDef.name,
+        shortcut: unitDef.name.charAt(0).toUpperCase(),
+        action: () => {
+          issueCommand({
+            type: 'TRAIN',
+            entityIds: selectedUnits,
+            unitType: unitId,
+          });
+        },
+        isDisabled: !canAfford || !hasSupply,
+        tooltip:
+          (unitDef.description || `Train ${unitDef.name}`) +
+          ` [${attackTypeText}]` +
+          (!hasSupply ? ' (Need more supply)' : ''),
+        cost: {
+          minerals: unitDef.mineralCost,
+          plasma: unitDef.plasmaCost,
+          supply: unitDef.supplyCost,
+        },
+      });
+    });
+  }
+
+  if (!isFlying) {
+    // Tech-gated units from Research Module
+    techUnits.forEach((unitId) => {
+      const unitDef = UNIT_DEFINITIONS[unitId];
+      if (!unitDef) return;
+
+      const canAfford = minerals >= unitDef.mineralCost && plasma >= unitDef.plasmaCost;
+      const hasSupply = supply + unitDef.supplyCost <= maxSupply;
+      const canTrain = hasTechLab && canAfford;
+      const attackTypeText = getAttackTypeText(unitDef);
+
+      let tooltipText = (unitDef.description || `Train ${unitDef.name}`) + ` [${attackTypeText}]`;
+      if (!hasTechLab) {
+        tooltipText += ' - Requires Research Module';
+      } else if (!hasSupply) {
+        tooltipText += ' (Need more supply)';
+      }
+
+      buttons.push({
+        id: `train_${unitId}`,
+        label: unitDef.name,
+        shortcut: unitDef.name.charAt(0).toUpperCase(),
+        action: () => {
+          if (hasTechLab) {
+            issueCommand({
+              type: 'TRAIN',
+              entityIds: selectedUnits,
+              unitType: unitId,
+            });
+          }
+        },
+        isDisabled: !canTrain || !hasSupply,
+        tooltip: tooltipText,
+        cost: {
+          minerals: unitDef.mineralCost,
+          plasma: unitDef.plasmaCost,
+          supply: unitDef.supplyCost,
+        },
+      });
+    });
+
+    // Addon buttons
+    if (building.canHaveAddon && !(building.hasAddon?.() ?? false)) {
+      const moduleDef = BUILDING_DEFINITIONS['research_module'];
+      if (moduleDef) {
+        const canAffordModule = minerals >= moduleDef.mineralCost && plasma >= moduleDef.plasmaCost;
+        const localPlayer = getLocalPlayerId();
+        buttons.push({
+          id: 'build_research_module',
+          label: '연구소',
+          shortcut: 'T',
+          action: () => {
+            if (!localPlayer) return;
+            issueCommand({
+              type: 'BUILD_ADDON',
+              entityIds: [selectedUnits[0]],
+              buildingId: selectedUnits[0],
+              addonType: 'research_module',
+            });
+          },
+          isDisabled: !canAffordModule,
+          tooltip: moduleDef.description || 'Addon that unlocks advanced units and research.',
+          cost: { minerals: moduleDef.mineralCost, plasma: moduleDef.plasmaCost },
+        });
+      }
+
+      const reactorDef = BUILDING_DEFINITIONS['production_module'];
+      if (reactorDef) {
+        const canAffordReactor =
+          minerals >= reactorDef.mineralCost && plasma >= reactorDef.plasmaCost;
+        const localPlayer = getLocalPlayerId();
+        buttons.push({
+          id: 'build_production_module',
+          label: '반응로',
+          shortcut: 'C',
+          action: () => {
+            if (!localPlayer) return;
+            issueCommand({
+              type: 'BUILD_ADDON',
+              entityIds: [selectedUnits[0]],
+              buildingId: selectedUnits[0],
+              addonType: 'production_module',
+            });
+          },
+          isDisabled: !canAffordReactor,
+          tooltip: reactorDef.description || 'Addon that enables double production of basic units.',
+          cost: { minerals: reactorDef.mineralCost, plasma: reactorDef.plasmaCost },
+        });
+      }
+    }
+
+    // Research commands
+    const store = useGameStore.getState();
+    const availableResearch = BUILDING_RESEARCH_MAP[building.buildingId] || [];
+    const localPlayerForResearch = getLocalPlayerId() ?? 'player1';
+
+    availableResearch.forEach((upgradeId) => {
+      const upgrade = RESEARCH_DEFINITIONS[upgradeId];
+      if (!upgrade) return;
+
+      const isResearched = store.hasResearch(localPlayerForResearch, upgradeId);
+      if (isResearched) return;
+
+      let reqMet = true;
+      if (upgrade.requirements) {
+        for (const req of upgrade.requirements) {
+          if (RESEARCH_DEFINITIONS[req] && !store.hasResearch(localPlayerForResearch, req)) {
+            reqMet = false;
+            break;
+          }
+        }
+      }
+
+      const isResearching = (building.productionQueue ?? []).some(
+        (item) => item.type === 'upgrade' && item.id === upgradeId
+      );
+
+      buttons.push({
+        id: `research_${upgradeId}`,
+        label: upgrade.name,
+        shortcut: upgrade.name.charAt(0).toUpperCase(),
+        action: () => {
+          issueCommand({
+            type: 'RESEARCH',
+            entityIds: selectedUnits,
+            upgradeId,
+          });
+        },
+        isDisabled:
+          minerals < upgrade.mineralCost || plasma < upgrade.plasmaCost || !reqMet || isResearching,
+        tooltip: upgrade.description + (isResearching ? ' (In progress)' : ''),
+        cost: { minerals: upgrade.mineralCost, plasma: upgrade.plasmaCost },
+      });
+    });
+
+    // Building upgrade buttons
+    if (building.canUpgradeTo && building.canUpgradeTo.length > 0) {
+      const isUpgrading = (building.productionQueue ?? []).some(
+        (item) => item.type === 'upgrade' && (building.canUpgradeTo ?? []).includes(item.id)
+      );
+
+      building.canUpgradeTo.forEach((upgradeBuildingId) => {
+        const upgradeDef = BUILDING_DEFINITIONS[upgradeBuildingId];
+        if (!upgradeDef) return;
+
+        const canAfford = minerals >= upgradeDef.mineralCost && plasma >= upgradeDef.plasmaCost;
+        const words = upgradeDef.name.split(' ');
+        const shortcut = words[words.length - 1].charAt(0).toUpperCase();
+
+        buttons.push({
+          id: `upgrade_${upgradeBuildingId}`,
+          label: upgradeDef.name,
+          shortcut,
+          action: () => {
+            issueCommand({
+              type: 'UPGRADE_BUILDING',
+              entityIds: selectedUnits,
+              upgradeTo: upgradeBuildingId,
+            });
+          },
+          isDisabled: !canAfford || isUpgrading,
+          tooltip:
+            (upgradeDef.description || `Upgrade to ${upgradeDef.name}`) +
+            (isUpgrading ? ' (Upgrading...)' : ''),
+          cost: { minerals: upgradeDef.mineralCost, plasma: upgradeDef.plasmaCost },
+        });
+      });
+    }
+
+    // Rally point
+    if ((building.canProduce ?? []).length > 0) {
+      buttons.push({
+        id: 'rally',
+        label: '집결지',
+        shortcut: 'R',
+        action: () => {
+          useGameStore.getState().setRallyPointMode(true);
+        },
+        tooltip: '새 유닛의 집결 지점 설정',
+      });
+    }
+
+    // Demolish button
+    buttons.push({
+      id: 'demolish',
+      label: '철거',
+      shortcut: 'DEL',
+      action: () => {
+        issueCommand({
+          type: 'DEMOLISH',
+          entityIds: selectedUnits,
+        });
+      },
+      tooltip: 'Demolish building (refunds 50% of resources)',
+    });
+  }
+
+  // Lift-off button
+  if (building.canLiftOff && building.state === 'complete' && !building.isFlying) {
+    const hasQueue = (building.productionQueue ?? []).length > 0;
+    buttons.push({
+      id: 'liftoff',
+      label: '이륙',
+      shortcut: 'L',
+      action: () => {
+        if (!hasQueue) {
+          issueCommand({
+            type: 'LIFTOFF',
+            entityIds: [selectedUnits[0]],
+            buildingId: selectedUnits[0],
+          });
+        }
+      },
+      isDisabled: hasQueue,
+      tooltip: hasQueue ? '생산 중에는 이륙할 수 없습니다' : '이륙하여 건물 위치 이동',
+    });
+  }
+
+  // Land button
+  if (building.canLiftOff && building.isFlying && building.state === 'flying') {
+    buttons.push({
+      id: 'land',
+      label: '착륙',
+      shortcut: 'L',
+      action: () => {
+        useGameStore.getState().setLandingMode(true, selectedUnits[0]);
+      },
+      tooltip: '착륙 지점을 클릭하세요',
+    });
+  }
+
+  // Building abilities
+  const buildingAbilityComponent = entity.get<{
+    getAbilityList?: () => Array<{
+      definition: {
+        id: string;
+        name: string;
+        hotkey: string;
+        targetType: string;
+        energyCost?: number;
+        description?: string;
+      };
+      cooldownRemaining?: number;
+      currentCooldown?: number;
+    }>;
+    canUseAbility?: (id: string) => boolean;
+  }>('Ability');
+
+  if (buildingAbilityComponent && buildingAbilityComponent.getAbilityList) {
+    const abilities = buildingAbilityComponent.getAbilityList();
+    for (const abilityState of abilities) {
+      const def = abilityState.definition;
+      const canUse = buildingAbilityComponent.canUseAbility?.(def.id) ?? true;
+      const energyCost = def.energyCost;
+
+      buttons.push({
+        id: `ability_${def.id}`,
+        label: def.name,
+        shortcut: def.hotkey,
+        action: () => {
+          if (
+            def.targetType === 'point' ||
+            def.targetType === 'unit' ||
+            def.targetType === 'ally'
+          ) {
+            useGameStore.getState().setAbilityTargetMode(def.id);
+          } else {
+            issueCommand({
+              type: 'ABILITY',
+              entityIds: selectedUnits,
+              abilityId: def.id,
+            });
+          }
+        },
+        isDisabled: !canUse,
+        tooltip:
+          (def.description ?? def.name) +
+          ((abilityState.currentCooldown ?? 0) > 0
+            ? ` (CD: ${Math.ceil(abilityState.currentCooldown ?? 0)}s)`
+            : ''),
+        cost:
+          (energyCost ?? 0) > 0 ? { minerals: 0, plasma: 0, supply: energyCost ?? 0 } : undefined,
+      });
+    }
+  }
+
+  return buttons;
+}

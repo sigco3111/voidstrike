@@ -1,0 +1,1221 @@
+{
+  "$schema": "./assets.schema.json",
+  "_comment": "VOIDSTRIKE Asset Configuration - Edit this file to customize models and animations",
+  "units": {
+    "fabricator": {
+      "model": "/models/units/fabricator_LOD0.glb",
+      "scale": 1.0,
+      "collisionRadius": 0.5,
+      "animationSpeed": 0.4,
+      "rotation": { "y": 90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "stand",
+          "pose"
+        ],
+        "walk": [
+          "walk",
+          "run",
+          "move",
+          "locomotion"
+        ],
+        "attack": [
+          "attack",
+          "shoot",
+          "fire",
+          "combat"
+        ],
+        "death": [
+          "death",
+          "die",
+          "dead"
+        ]
+      }
+    },
+    "trooper": {
+      "model": "/models/units/trooper_LOD0.glb",
+      "scale": 1.2,
+      "collisionRadius": 0.6,
+      "rotation": { "y": 90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "stand",
+          "pose"
+        ],
+        "walk": [
+          "walk",
+          "run",
+          "move"
+        ],
+        "attack": [
+          "attack",
+          "shoot",
+          "fire"
+        ],
+        "death": [
+          "death",
+          "die",
+          "dead"
+        ]
+      }
+    },
+    "breacher": {
+      "model": "/models/units/breacher_LOD0.glb",
+      "scale": 1.5,
+      "collisionRadius": 0.75,
+      "rotation": { "y": 90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "stand"
+        ],
+        "walk": [
+          "walk",
+          "run",
+          "move"
+        ],
+        "attack": [
+          "attack",
+          "shoot",
+          "fire",
+          "grenade"
+        ],
+        "death": [
+          "death",
+          "die"
+        ]
+      }
+    },
+    "vanguard": {
+      "model": "/models/units/vanguard_LOD0.glb",
+      "scale": 1.3,
+      "collisionRadius": 0.65,
+      "rotation": { "y": 90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "stand"
+        ],
+        "walk": [
+          "walk",
+          "run"
+        ],
+        "attack": [
+          "attack",
+          "melee",
+          "strike"
+        ],
+        "death": [
+          "death",
+          "die"
+        ]
+      }
+    },
+    "operative": {
+      "model": "/models/units/operative_LOD0.glb",
+      "scale": 1.3,
+      "collisionRadius": 0.65,
+      "rotation": { "y": 90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "stealth_idle",
+          "stand"
+        ],
+        "walk": [
+          "walk",
+          "sneak",
+          "run"
+        ],
+        "attack": [
+          "attack",
+          "snipe",
+          "shoot"
+        ],
+        "death": [
+          "death",
+          "die"
+        ]
+      }
+    },
+    "scorcher": {
+      "model": "/models/units/scorcher_LOD0.glb",
+      "scale": 1,
+      "collisionRadius": 0.5,
+      "rotation": { "y": 180 },
+      "animations": {
+        "idle": [
+          "idle",
+          "stand"
+        ],
+        "walk": [
+          "walk",
+          "roll",
+          "move"
+        ],
+        "attack": [
+          "attack",
+          "flame",
+          "fire"
+        ],
+        "death": [
+          "death",
+          "explode"
+        ]
+      },
+      "effects": {
+        "dustCloud": {
+          "type": "dust_cloud",
+          "attachments": [
+            { "x": -1.35, "y": 0.65, "z": 0, "scale": 0.8 }
+          ],
+          "emitRate": 8,
+          "conditions": ["moving"],
+          "speedScale": true
+        },
+        "flamethrower": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": 1.41, "y": 0.55, "z": 0, "scale": 0.6 }
+          ],
+          "emitRate": 15,
+          "conditions": ["attacking"]
+        }
+      }
+    },
+    "devastator": {
+      "model": "/models/units/devastator_LOD0.glb",
+      "scale": 2.4,
+      "collisionRadius": 1.2,
+      "rotation": { "y": 90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "stand"
+        ],
+        "walk": [
+          "walk",
+          "drive",
+          "move"
+        ],
+        "attack": [
+          "attack",
+          "cannon",
+          "fire"
+        ],
+        "death": [
+          "death",
+          "explode"
+        ]
+      },
+      "effects": {
+        "dustCloud": {
+          "type": "dust_cloud",
+          "attachments": [
+            { "x": -0.01, "y": 0.16, "z": -1.22, "scale": 1.2 },
+            { "x": -0.12, "y": 0.18, "z": -1.18, "scale": 1.2 }
+          ],
+          "emitRate": 10,
+          "conditions": ["moving"],
+          "speedScale": true
+        },
+        "engineExhaust": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": -0.01, "y": 0.16, "z": -1.22, "scale": 0.6 },
+            { "x": -0.12, "y": 0.18, "z": -1.18, "scale": 0.6 }
+          ],
+          "emitRate": 6,
+          "conditions": ["moving"]
+        }
+      }
+    },
+    "colossus": {
+      "model": "/models/units/colossus_LOD0.glb",
+      "scale": 2.5,
+      "collisionRadius": 1.25,
+      "rotation": { "y": 90 },
+      "animations": {
+        "idle": ["idle", "stand"],
+        "walk": ["walk", "stomp", "move"],
+        "attack": ["attack", "crush", "laser"],
+        "death": ["death", "collapse"]
+      },
+      "effects": {
+        "footDust": {
+          "type": "dust_cloud",
+          "attachments": [
+            { "x": -0.66, "y": 0.79, "z": -0.89, "scale": 1.0 },
+            { "x": -2.02, "y": 0.77, "z": 1.15, "scale": 1.0 }
+          ],
+          "emitRate": 6,
+          "conditions": ["moving"]
+        }
+      }
+    },
+    "valkyrie": {
+      "model": "/models/units/valkyrie_LOD0.glb",
+      "scale": 1.2,
+      "collisionRadius": 0.6,
+      "airborneHeight": 8,
+      "animations": {
+        "idle": [
+          "idle",
+          "hover",
+          "stand"
+        ],
+        "walk": [
+          "walk",
+          "fly",
+          "move",
+          "flight"
+        ],
+        "attack": [
+          "attack",
+          "missiles",
+          "fire"
+        ],
+        "death": [
+          "death",
+          "crash"
+        ]
+      },
+      "effects": {
+        "thruster": {
+          "type": "thruster",
+          "attachments": [
+            { "x": -1.12, "y": 0.64, "z": 0.22, "scale": 0.8 },
+            { "x": -1.12, "y": 0.65, "z": -0.22, "scale": 0.8 }
+          ],
+          "emitRate": 15,
+          "conditions": ["moving", "flying"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": -1.12, "y": 0.64, "z": 0.22, "scale": 0.6 },
+            { "x": -1.12, "y": 0.65, "z": -0.22, "scale": 0.6 }
+          ],
+          "emitRate": 6,
+          "conditions": ["moving"],
+          "speedScale": true
+        }
+      }
+    },
+    "lifter": {
+      "model": "/models/units/lifter_LOD0.glb",
+      "scale": 1.2,
+      "collisionRadius": 0.6,
+      "airborneHeight": 6,
+      "animations": {
+        "idle": [
+          "idle",
+          "hover"
+        ],
+        "walk": [
+          "walk",
+          "fly",
+          "move"
+        ],
+        "attack": [
+          "attack"
+        ],
+        "death": [
+          "death",
+          "crash"
+        ]
+      },
+      "effects": {
+        "thruster": {
+          "type": "thruster",
+          "attachments": [
+            { "x": 0.45, "y": 0.8, "z": 0.94, "scale": 0.6 },
+            { "x": 0.46, "y": 0.79, "z": -0.95, "scale": 0.6 }
+          ],
+          "emitRate": 10,
+          "conditions": ["always"]
+        },
+        "hoverDust": {
+          "type": "hover_dust",
+          "attachments": [
+            { "x": 0, "y": -0.5, "z": 0, "scale": 1.0 }
+          ],
+          "emitRate": 5,
+          "conditions": ["idle"]
+        }
+      }
+    },
+    "specter": {
+      "model": "/models/units/specter_LOD0.glb",
+      "scale": 1,
+      "collisionRadius": 0.5,
+      "airborneHeight": 11,
+      "animations": {
+        "idle": [
+          "idle",
+          "hover",
+          "cloak"
+        ],
+        "walk": [
+          "walk",
+          "fly",
+          "move"
+        ],
+        "attack": [
+          "attack",
+          "strike",
+          "bomb"
+        ],
+        "death": [
+          "death",
+          "explode"
+        ]
+      },
+      "effects": {
+        "thruster": {
+          "type": "thruster",
+          "attachments": [
+            { "x": -1.3, "y": 0.23, "z": 0.3, "scale": 0.7 },
+            { "x": -1.3, "y": 0.23, "z": -0.3, "scale": 0.7 }
+          ],
+          "emitRate": 12,
+          "conditions": ["moving", "flying"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": -1.3, "y": 0.23, "z": 0.3, "scale": 0.5 },
+            { "x": -1.3, "y": 0.23, "z": -0.3, "scale": 0.5 }
+          ],
+          "emitRate": 5,
+          "conditions": ["moving"],
+          "speedScale": true
+        }
+      }
+    },
+    "overseer": {
+      "model": "/models/units/overseer_LOD0.glb",
+      "scale": 0.7,
+      "collisionRadius": 0.35,
+      "airborneHeight": 6,
+      "animations": {
+        "idle": [
+          "idle",
+          "scan",
+          "hover"
+        ],
+        "walk": [
+          "walk",
+          "fly",
+          "patrol"
+        ],
+        "attack": [
+          "attack"
+        ],
+        "death": [
+          "death",
+          "crash"
+        ]
+      }
+    },
+    "dreadnought": {
+      "model": "/models/units/dreadnought_LOD0.glb",
+      "scale": 3.0,
+      "collisionRadius": 1.5,
+      "airborneHeight": 22,
+      "animations": {
+        "idle": [
+          "idle",
+          "hover",
+          "cruise"
+        ],
+        "walk": [
+          "walk",
+          "fly",
+          "move",
+          "cruise"
+        ],
+        "attack": [
+          "attack",
+          "broadside",
+          "nova_cannon"
+        ],
+        "death": [
+          "death",
+          "explode",
+          "crash"
+        ]
+      },
+      "effects": {
+        "engineExhaust": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": -1.8, "y": 0.28, "z": 0.15, "scale": 1.5 },
+            { "x": -1.8, "y": 0.28, "z": -0.15, "scale": 1.5 }
+          ],
+          "emitRate": 12,
+          "conditions": ["always"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": -1.8, "y": 0.28, "z": 0.15, "scale": 2.0 },
+            { "x": -1.8, "y": 0.28, "z": -0.15, "scale": 2.0 }
+          ],
+          "emitRate": 8,
+          "conditions": ["moving"]
+        }
+      }
+    },
+    "mariner": {
+      "model": "/models/units/mariner_LOD0.glb",
+      "scale": 1.0,
+      "collisionRadius": 0.5,
+      "rotation": { "y": 0 },
+      "animations": {
+        "idle": ["idle", "float", "bob"],
+        "walk": ["walk", "sail", "cruise", "move"],
+        "attack": ["attack", "repair", "weld"],
+        "death": ["death", "sink", "explode"]
+      },
+      "effects": {
+        "wake": {
+          "type": "water_wake",
+          "attachments": [
+            { "x": -0.5, "y": 0.1, "z": 0, "scale": 0.6 }
+          ],
+          "emitRate": 8,
+          "conditions": ["moving"],
+          "speedScale": true
+        }
+      }
+    },
+    "stingray": {
+      "model": "/models/units/stingray_LOD0.glb",
+      "scale": 1.5,
+      "collisionRadius": 0.75,
+      "rotation": { "y": 0 },
+      "animations": {
+        "idle": ["idle", "float", "patrol"],
+        "walk": ["walk", "sail", "cruise", "speed"],
+        "attack": ["attack", "fire", "strafe"],
+        "death": ["death", "sink", "explode"]
+      },
+      "effects": {
+        "wake": {
+          "type": "water_wake",
+          "attachments": [
+            { "x": -0.8, "y": 0.1, "z": 0.3, "scale": 0.8 },
+            { "x": -0.8, "y": 0.1, "z": -0.3, "scale": 0.8 }
+          ],
+          "emitRate": 12,
+          "conditions": ["moving"],
+          "speedScale": true
+        }
+      }
+    },
+    "corsair": {
+      "model": "/models/units/corsair_LOD0.glb",
+      "scale": 2.0,
+      "collisionRadius": 1.0,
+      "rotation": { "y": 0 },
+      "animations": {
+        "idle": ["idle", "float", "scan"],
+        "walk": ["walk", "sail", "cruise"],
+        "attack": ["attack", "missiles", "fire", "flak"],
+        "death": ["death", "sink", "explode"]
+      },
+      "effects": {
+        "wake": {
+          "type": "water_wake",
+          "attachments": [
+            { "x": -1.0, "y": 0.1, "z": 0.4, "scale": 1.0 },
+            { "x": -1.0, "y": 0.1, "z": -0.4, "scale": 1.0 }
+          ],
+          "emitRate": 10,
+          "conditions": ["moving"],
+          "speedScale": true
+        },
+        "engineSmoke": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": -0.8, "y": 0.6, "z": 0, "scale": 0.5 }
+          ],
+          "emitRate": 4,
+          "conditions": ["always"]
+        }
+      }
+    },
+    "leviathan": {
+      "model": "/models/units/leviathan_LOD0.glb",
+      "scale": 3.0,
+      "collisionRadius": 1.5,
+      "rotation": { "y": 0 },
+      "animations": {
+        "idle": ["idle", "float", "cruise"],
+        "walk": ["walk", "sail", "cruise", "move"],
+        "attack": ["attack", "broadside", "cannon", "bombardment"],
+        "death": ["death", "sink", "explode", "capsize"]
+      },
+      "effects": {
+        "wake": {
+          "type": "water_wake",
+          "attachments": [
+            { "x": -1.5, "y": 0.1, "z": 0.6, "scale": 1.5 },
+            { "x": -1.5, "y": 0.1, "z": -0.6, "scale": 1.5 }
+          ],
+          "emitRate": 12,
+          "conditions": ["moving"],
+          "speedScale": true
+        },
+        "engineSmoke": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": -1.2, "y": 1.0, "z": 0.3, "scale": 0.8 },
+            { "x": -1.2, "y": 1.0, "z": -0.3, "scale": 0.8 }
+          ],
+          "emitRate": 6,
+          "conditions": ["always"]
+        }
+      }
+    },
+    "hunter": {
+      "model": "/models/units/hunter_LOD0.glb",
+      "scale": 2.0,
+      "collisionRadius": 1.0,
+      "rotation": { "y": 0 },
+      "animations": {
+        "idle": ["idle", "float", "submerged"],
+        "walk": ["walk", "sail", "dive", "cruise"],
+        "attack": ["attack", "torpedo", "fire"],
+        "death": ["death", "sink", "implode", "explode"]
+      },
+      "effects": {
+        "wake": {
+          "type": "water_wake",
+          "attachments": [
+            { "x": -1.0, "y": 0.1, "z": 0, "scale": 0.8 }
+          ],
+          "emitRate": 6,
+          "conditions": ["moving"],
+          "speedScale": true
+        },
+        "bubbles": {
+          "type": "bubble_trail",
+          "attachments": [
+            { "x": -0.8, "y": -0.2, "z": 0, "scale": 0.6 }
+          ],
+          "emitRate": 8,
+          "conditions": ["submerged", "moving"]
+        }
+      }
+    }
+  },
+  "buildings": {
+    "headquarters": {
+      "model": "/models/buildings/headquarters_LOD0.glb",
+      "scale": 5.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "active"
+        ],
+        "construct": [
+          "construct",
+          "build"
+        ],
+        "liftoff": [
+          "liftoff",
+          "takeoff"
+        ],
+        "land": [
+          "land",
+          "landing"
+        ]
+      },
+      "effects": {
+        "engineExhaust": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": 0, "y": -0.5, "z": 1.5, "scale": 2.0 },
+            { "x": 0, "y": -0.5, "z": -1.5, "scale": 2.0 },
+            { "x": 1.5, "y": -0.5, "z": 0, "scale": 2.0 },
+            { "x": -1.5, "y": -0.5, "z": 0, "scale": 2.0 }
+          ],
+          "emitRate": 15,
+          "conditions": ["flying", "lifting", "landing"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": 0, "y": -0.5, "z": 1.5, "scale": 2.5 },
+            { "x": 0, "y": -0.5, "z": -1.5, "scale": 2.5 },
+            { "x": 1.5, "y": -0.5, "z": 0, "scale": 2.5 },
+            { "x": -1.5, "y": -0.5, "z": 0, "scale": 2.5 }
+          ],
+          "emitRate": 10,
+          "conditions": ["flying"]
+        }
+      }
+    },
+    "orbital_station": {
+      "model": "/models/buildings/orbital_station_LOD0.glb",
+      "scale": 5.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "orbit"
+        ],
+        "construct": [
+          "construct"
+        ]
+      },
+      "effects": {
+        "engineExhaust": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": 0, "y": -0.5, "z": 1.5, "scale": 2.0 },
+            { "x": 0, "y": -0.5, "z": -1.5, "scale": 2.0 },
+            { "x": 1.5, "y": -0.5, "z": 0, "scale": 2.0 },
+            { "x": -1.5, "y": -0.5, "z": 0, "scale": 2.0 }
+          ],
+          "emitRate": 15,
+          "conditions": ["flying", "lifting", "landing"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": 0, "y": -0.5, "z": 1.5, "scale": 2.5 },
+            { "x": 0, "y": -0.5, "z": -1.5, "scale": 2.5 },
+            { "x": 1.5, "y": -0.5, "z": 0, "scale": 2.5 },
+            { "x": -1.5, "y": -0.5, "z": 0, "scale": 2.5 }
+          ],
+          "emitRate": 10,
+          "conditions": ["flying"]
+        }
+      }
+    },
+    "bastion": {
+      "model": "/models/buildings/bastion_LOD0.glb",
+      "scale": 5.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "supply_cache": {
+      "model": "/models/buildings/supply_cache_LOD0.glb",
+      "scale": 2.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "extractor": {
+      "model": "/models/buildings/extractor_LOD0.glb",
+      "scale": 3.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "extract",
+          "pump"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "infantry_bay": {
+      "model": "/models/buildings/infantry_bay_LOD0.glb",
+      "scale": 3.5,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ],
+        "train": [
+          "train",
+          "produce"
+        ]
+      },
+      "effects": {
+        "engineExhaust": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": 0, "y": -0.4, "z": 0.8, "scale": 1.4 },
+            { "x": 0, "y": -0.4, "z": -0.8, "scale": 1.4 },
+            { "x": 0.8, "y": -0.4, "z": 0, "scale": 1.4 },
+            { "x": -0.8, "y": -0.4, "z": 0, "scale": 1.4 }
+          ],
+          "emitRate": 12,
+          "conditions": ["flying", "lifting", "landing"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": 0, "y": -0.4, "z": 0.8, "scale": 1.8 },
+            { "x": 0, "y": -0.4, "z": -0.8, "scale": 1.8 }
+          ],
+          "emitRate": 8,
+          "conditions": ["flying"]
+        }
+      }
+    },
+    "tech_center": {
+      "model": "/models/buildings/tech_center_LOD0.glb",
+      "scale": 3.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "scan"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "garrison": {
+      "model": "/models/buildings/garrison_LOD0.glb",
+      "scale": 2.5,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "forge": {
+      "model": "/models/buildings/forge_LOD0.glb",
+      "scale": 3.5,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "forge",
+          "work"
+        ],
+        "construct": [
+          "construct"
+        ],
+        "produce": [
+          "produce",
+          "manufacture"
+        ]
+      },
+      "effects": {
+        "engineExhaust": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": 0, "y": -0.4, "z": 1.0, "scale": 1.6 },
+            { "x": 0, "y": -0.4, "z": -1.0, "scale": 1.6 },
+            { "x": 1.0, "y": -0.4, "z": 0, "scale": 1.6 },
+            { "x": -1.0, "y": -0.4, "z": 0, "scale": 1.6 }
+          ],
+          "emitRate": 12,
+          "conditions": ["flying", "lifting", "landing"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": 0, "y": -0.4, "z": 1.0, "scale": 2.0 },
+            { "x": 0, "y": -0.4, "z": -1.0, "scale": 2.0 }
+          ],
+          "emitRate": 8,
+          "conditions": ["flying"]
+        }
+      }
+    },
+    "arsenal": {
+      "model": "/models/buildings/arsenal_LOD0.glb",
+      "scale": 3.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "hangar": {
+      "model": "/models/buildings/hangar_LOD0.glb",
+      "scale": 3.5,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ],
+        "launch": [
+          "launch",
+          "deploy"
+        ]
+      },
+      "effects": {
+        "engineExhaust": {
+          "type": "engine_exhaust",
+          "attachments": [
+            { "x": 0, "y": -0.4, "z": 0.7, "scale": 1.3 },
+            { "x": 0, "y": -0.4, "z": -0.7, "scale": 1.3 },
+            { "x": 0.7, "y": -0.4, "z": 0, "scale": 1.3 },
+            { "x": -0.7, "y": -0.4, "z": 0, "scale": 1.3 }
+          ],
+          "emitRate": 12,
+          "conditions": ["flying", "lifting", "landing"]
+        },
+        "smokeTrail": {
+          "type": "smoke_trail",
+          "attachments": [
+            { "x": 0, "y": -0.4, "z": 0.7, "scale": 1.6 },
+            { "x": 0, "y": -0.4, "z": -0.7, "scale": 1.6 }
+          ],
+          "emitRate": 8,
+          "conditions": ["flying"]
+        }
+      }
+    },
+    "drydock": {
+      "model": "/models/buildings/drydock_LOD0.glb",
+      "scale": 4.5,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": ["idle", "active"],
+        "construct": ["construct", "build"],
+        "produce": ["produce", "launch", "deploy"]
+      },
+      "effects": {
+        "waterSplash": {
+          "type": "water_splash",
+          "attachments": [
+            { "x": 2.0, "y": 0.2, "z": 0, "scale": 1.5 }
+          ],
+          "emitRate": 4,
+          "conditions": ["producing"]
+        }
+      }
+    },
+    "power_core": {
+      "model": "/models/buildings/power_core_LOD0.glb",
+      "scale": 3.5,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "pulse",
+          "glow"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "ops_center": {
+      "model": "/models/buildings/ops_center_LOD0.glb",
+      "scale": 3.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "active"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "radar_array": {
+      "model": "/models/buildings/radar_array_LOD0.glb",
+      "scale": 4.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "spin",
+          "rotate"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "defense_turret": {
+      "model": "/models/buildings/defense_turret_LOD0.glb",
+      "scale": 2.5,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "scan"
+        ],
+        "attack": [
+          "attack",
+          "fire",
+          "shoot"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "research_module": {
+      "model": "/models/buildings/research_module_LOD0.glb",
+      "scale": 2.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    },
+    "production_module": {
+      "model": "/models/buildings/production_module_LOD0.glb",
+      "scale": 2.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle"
+        ],
+        "construct": [
+          "construct"
+        ]
+      }
+    }
+  },
+  "resources": {
+    "minerals": {
+      "model": "/models/resources/minerals_LOD0.glb",
+      "scale": 2.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "glow",
+          "shimmer"
+        ]
+      }
+    },
+    "plasma": {
+      "model": "/models/resources/plasma_LOD0.glb",
+      "scale": 2.0,
+      "rotation": { "y": -90 },
+      "animations": {
+        "idle": [
+          "idle",
+          "vent",
+          "smoke"
+        ]
+      }
+    }
+  },
+  "decorations": {
+    "alien_tower": {
+      "model": "/models/decorations/alien_tower_LOD0.glb",
+      "scale": 14.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.4,
+        "emissive": "#ff4400",
+        "emissiveIntensity": 3.0,
+        "pulseSpeed": 0.5,
+        "pulseAmplitude": 0.3,
+        "attachLight": {
+          "color": "#ff4400",
+          "intensity": 2.0,
+          "distance": 15
+        }
+      }
+    },
+    "rocks_large": {
+      "model": "/models/decorations/rocks_large_LOD0.glb",
+      "scale": 3.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.6,
+        "envMapIntensity": 0.25,
+        "receiveShadow": true,
+        "castShadow": true
+      }
+    },
+    "rocks_small": {
+      "model": "/models/decorations/rocks_small_LOD0.glb",
+      "scale": 2.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.25,
+        "receiveShadow": true,
+        "castShadow": true
+      }
+    },
+    "rock_single": {
+      "model": "/models/decorations/rock_single_LOD0.glb",
+      "scale": 2.5,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.25,
+        "receiveShadow": true,
+        "castShadow": true
+      }
+    },
+    "tree_pine_tall": {
+      "model": "/models/decorations/tree_pine_tall_LOD0.glb",
+      "scale": 14.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.15
+      }
+    },
+    "tree_dead": {
+      "model": "/models/decorations/tree_dead_LOD0.glb",
+      "scale": 9.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.1
+      }
+    },
+    "tree_alien": {
+      "model": "/models/decorations/tree_alien_LOD0.glb",
+      "scale": 11.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.25,
+        "emissiveIntensity": 1.2,
+        "pulseSpeed": 0.15,
+        "pulseAmplitude": 0.08
+      }
+    },
+    "tree_palm": {
+      "model": "/models/decorations/tree_palm_LOD0.glb",
+      "scale": 11.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.15
+      }
+    },
+    "tree_mushroom": {
+      "model": "/models/decorations/tree_mushroom_LOD0.glb",
+      "scale": 8.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.25,
+        "emissiveIntensity": 1.5,
+        "pulseSpeed": 0.12,
+        "pulseAmplitude": 0.1
+      }
+    },
+    "crystal_formation": {
+      "model": "/models/decorations/crystal_formation_LOD0.glb",
+      "scale": 4.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.1
+      }
+    },
+    "shrub": {
+      "model": "/models/decorations/shrub_LOD0.glb",
+      "scale": 1.5,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.1
+      }
+    },
+    "debris": {
+      "model": "/models/decorations/debris_LOD0.glb",
+      "scale": 1.5,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.2
+      }
+    },
+    "ruined_wall": {
+      "model": "/models/decorations/ruined_wall_LOD0.glb",
+      "scale": 5.0,
+      "rotation": { "y": -90 },
+      "rendering": {
+        "exposure": 1.0,
+        "envMapIntensity": 0.2
+      }
+    }
+  },
+  "_documentation": {
+    "animations": {
+      "description": "Animation mappings let you define which animation clips in your GLB files correspond to game actions",
+      "format": "\"gameAction\": [\"clipName1\", \"clipName2\", ...]",
+      "example": "If your walk animation is named 'my_walk_cycle', add it: \"walk\": [\"my_walk_cycle\", \"walk\", \"run\"]",
+      "priority": "First matching clip name wins, so put your preferred animation first in the array"
+    },
+    "animationSpeed": {
+      "description": "Optional multiplier for animation playback speed (default: 1.0)",
+      "example": "Use 0.5 for half speed, 2.0 for double speed"
+    },
+    "scale": {
+      "description": "Target size in game units. Models are normalized so their bounding box height equals this value.",
+      "example": "scale: 1.2 makes the model 1.2 game units tall. scale: 15 makes it 15 units tall (for big ships).",
+      "default": "1.0"
+    },
+    "airborneHeight": {
+      "description": "For flying units only. Height in game units above the terrain surface. This controls how HIGH the unit flies, independent of its visual size.",
+      "default": "8 (standard flight altitude)",
+      "example": "A specter with airborneHeight: 7 flies at 7 units above terrain. A dreadnought with airborneHeight: 15 flies higher."
+    },
+    "rotation": {
+      "description": "Rotation offset in degrees on all 3 axes: { x, y, z }. Use to fix models facing wrong direction or tilted.",
+      "example": "GLTF models from Blender face +Z by default. Use { \"y\": -90 } to rotate to face +X (game forward). If unit walks backward: { \"y\": 180 }. Tilt forward: { \"x\": 15 }",
+      "default": "{ \"x\": 0, \"y\": 0, \"z\": 0 } (no rotation - model should already face +X)"
+    },
+    "lod": {
+      "description": "LOD levels are automatically detected. LOD0 is highest detail (default), LOD1 is medium, LOD2 is lowest.",
+      "convention": "Models named modelname_LOD0.glb, modelname_LOD1.glb, modelname_LOD2.glb"
+    },
+    "exposure": {
+      "description": "Per-model brightness multiplier. Values > 1.0 brighten the model, values < 1.0 darken it.",
+      "default": "1.0 (no brightness change)",
+      "example": "exposure: 1.3 makes the model 30% brighter. exposure: 0.7 makes it 30% darker.",
+      "note": "This is independent of the global post-processing exposure. Use for models that appear too dark/bright relative to scene."
+    },
+    "collisionRadius": {
+      "description": "Collision radius in game units. Used for unit separation and steering. Should be proportional to visual model size (typically scale * 0.5).",
+      "default": "0.5 for ground units, 0.4 for flying units (from collision.config.json defaults)",
+      "example": "A trooper with scale 1.2 should have collisionRadius ~0.6. A dreadnought with scale 3.0 should have collisionRadius ~1.5.",
+      "formula": "Recommended: collisionRadius = scale * 0.5"
+    }
+  }
+}

@@ -1,0 +1,501 @@
+import { create } from 'zustand';
+import { debugInitialization } from '@/utils/debugLogger';
+import type { MapData } from '@/data/maps/MapTypes';
+import type { EditorMapData } from '@/editor/config/EditorConfig';
+import {
+  setLargeData,
+  getLargeData,
+  removeLargeData,
+} from '@/utils/storage';
+
+export type StartingResources = 'normal' | 'high' | 'insane';
+export type GameSpeed = 'slower' | 'normal' | 'faster' | 'fastest';
+export type AIDifficulty = 'easy' | 'medium' | 'hard' | 'insane';
+export type PlayerType = 'human' | 'ai' | 'open' | 'closed';
+
+// Team configuration: 0 = Free For All, 1-4 = team numbers
+export type TeamNumber = 0 | 1 | 2 | 3 | 4;
+
+// Player slot configuration
+export interface PlayerSlot {
+  id: string; // player1, player2, etc.
+  type: PlayerType;
+  faction: string;
+  colorId: string;
+  aiDifficulty: AIDifficulty;
+  name: string;
+  team: TeamNumber; // 0 = FFA, 1-4 = team
+  // For connected guests (when type is 'human' and not local player)
+  isGuest?: boolean;
+  guestName?: string;
+}
+
+export interface GameSetupState {
+  // Map selection
+  selectedMapId: string;
+
+  // Custom map data for preview/testing (takes priority over selectedMapId)
+  customMapData: MapData | null;
+
+  // Editor map data for preserving editor state during preview
+  editorMapData: EditorMapData | null;
+
+  // Editor preview mode - when true, show "Back to Editor" button
+  isEditorPreview: boolean;
+
+  // Game settings
+  startingResources: StartingResources;
+  gameSpeed: GameSpeed;
+  fogOfWar: boolean;
+
+  // Player slots (max 8 players)
+  playerSlots: PlayerSlot[];
+
+  // Local player ID - the player controlled by this client (null if spectating)
+  localPlayerId: string | null;
+
+  // Game session flag - must be true to enter /game
+  gameStarted: boolean;
+
+  // Battle Simulator mode - sandbox for spawning units
+  isBattleSimulator: boolean;
+
+  // Actions
+  setSelectedMap: (mapId: string) => void;
+  setCustomMap: (mapData: MapData | null) => void;
+  setEditorMapData: (mapData: EditorMapData | null) => void;
+  setEditorPreview: (isPreview: boolean) => void;
+  setStartingResources: (resources: StartingResources) => void;
+  setGameSpeed: (speed: GameSpeed) => void;
+  setFogOfWar: (enabled: boolean) => void;
+
+  // Player slot actions
+  setPlayerSlotType: (slotId: string, type: PlayerType) => void;
+  setPlayerSlotFaction: (slotId: string, faction: string) => void;
+  setPlayerSlotColor: (slotId: string, colorId: string) => void;
+  setPlayerSlotAIDifficulty: (slotId: string, difficulty: AIDifficulty) => void;
+  setPlayerSlotName: (slotId: string, name: string) => void;
+  setPlayerSlotTeam: (slotId: string, team: TeamNumber) => void;
+  addPlayerSlot: () => void;
+  removePlayerSlot: (slotId: string) => void;
+
+  // Multiplayer guest management
+  fillOpenSlotWithGuest: (guestName: string) => string | null; // Returns slot ID or null if no open slot
+  removeGuest: (slotId: string) => void;
+
+  // Get player color hex by player ID
+  getPlayerColorHex: (playerId: string) => number;
+
+  // Player type helpers
+  isHumanPlayer: (playerId: string) => boolean;
+  isAIPlayer: (playerId: string) => boolean;
+  getLocalPlayerId: () => string | null;
+  getAIPlayerIds: () => string[];
+  getHumanPlayerIds: () => string[];
+
+  startGame: (overrideLocalPlayerId?: string) => void;
+  startBattleSimulator: () => void;
+  endGame: () => void;
+  reset: () => void;
+  clearEditorPreviewState: () => void;
+  setLocalPlayerId: (playerId: string | null) => void;
+
+  // Check if current session is spectator mode (no human players or local player is not set)
+  isSpectator: () => boolean;
+
+  // Get the slot number (1-8) for the local player (for spawn point selection)
+  getLocalPlayerSlot: () => number;
+
+  // Enable spectator mode (used when player is defeated but wants to continue watching)
+  enableSpectatorMode: () => void;
+}
+
+export const STARTING_RESOURCES_VALUES: Record<StartingResources, { minerals: number; plasma: number }> = {
+  normal: { minerals: 50, plasma: 0 },
+  high: { minerals: 500, plasma: 200 },
+  insane: { minerals: 10000, plasma: 5000 },
+};
+
+export const GAME_SPEED_VALUES: Record<GameSpeed, number> = {
+  slower: 0.5,
+  normal: 1.0,
+  faster: 1.5,
+  fastest: 2.0,
+};
+
+// Available player colors
+export const PLAYER_COLORS = [
+  { id: 'blue', name: 'Blue', hex: 0x40a0ff },
+  { id: 'red', name: 'Red', hex: 0xff4040 },
+  { id: 'green', name: 'Green', hex: 0x40ff40 },
+  { id: 'yellow', name: 'Yellow', hex: 0xffff40 },
+  { id: 'purple', name: 'Purple', hex: 0xa040ff },
+  { id: 'orange', name: 'Orange', hex: 0xff8000 },
+  { id: 'cyan', name: 'Cyan', hex: 0x40ffff },
+  { id: 'pink', name: 'Pink', hex: 0xff80c0 },
+];
+
+// Get color hex by color ID
+export function getColorHex(colorId: string): number {
+  const color = PLAYER_COLORS.find(c => c.id === colorId);
+  return color?.hex ?? 0x808080;
+}
+
+// Team colors for display
+export const TEAM_COLORS: Record<TeamNumber, { name: string; color: string }> = {
+  0: { name: 'FFA', color: '#888888' },
+  1: { name: 'Team 1', color: '#4080ff' },
+  2: { name: 'Team 2', color: '#ff4040' },
+  3: { name: 'Team 3', color: '#40ff40' },
+  4: { name: 'Team 4', color: '#ffff40' },
+};
+
+// Default player slots (player 1 human, player 2 AI)
+const defaultPlayerSlots: PlayerSlot[] = [
+  {
+    id: 'player1',
+    type: 'human',
+    faction: 'dominion',
+    colorId: 'blue',
+    aiDifficulty: 'medium',
+    name: 'Player 1',
+    team: 0, // FFA by default
+  },
+  {
+    id: 'player2',
+    type: 'ai',
+    faction: 'dominion',
+    colorId: 'red',
+    aiDifficulty: 'medium',
+    name: 'Player 2',
+    team: 0, // FFA by default
+  },
+];
+
+const initialState = {
+  selectedMapId: 'crystal_caverns',
+  customMapData: null as MapData | null,
+  editorMapData: null as EditorMapData | null,
+  isEditorPreview: false,
+  startingResources: 'normal' as StartingResources,
+  gameSpeed: 'normal' as GameSpeed,
+  fogOfWar: true,
+  playerSlots: [...defaultPlayerSlots],
+  localPlayerId: 'player1' as string | null, // Default to player1, updated when game starts
+  gameStarted: false,
+  isBattleSimulator: false,
+};
+
+export const useGameSetupStore = create<GameSetupState>((set, get) => ({
+  ...initialState,
+
+  setSelectedMap: (mapId) => set({ selectedMapId: mapId, customMapData: null, editorMapData: null, isEditorPreview: false }),
+  setCustomMap: (mapData) => set({ customMapData: mapData }),
+  setEditorMapData: (mapData) => {
+    // Persist to IndexedDB so it survives page navigation (when navigating back from preview)
+    // IndexedDB has much higher storage limits than sessionStorage (~5MB vs hundreds of MB)
+    if (typeof window !== 'undefined') {
+      if (mapData) {
+        // Fire-and-forget async storage - the state is set synchronously below
+        setLargeData('voidstrike_editor_map_data', mapData).then(result => {
+          if (!result.success) {
+            debugInitialization.warn('[gameSetupStore] Failed to persist editor map data:', result.message);
+          }
+        });
+      } else {
+        removeLargeData('voidstrike_editor_map_data');
+      }
+    }
+    set({ editorMapData: mapData });
+  },
+  setEditorPreview: (isPreview) => set({ isEditorPreview: isPreview }),
+  setStartingResources: (resources) => set({ startingResources: resources }),
+  setGameSpeed: (speed) => set({ gameSpeed: speed }),
+  setFogOfWar: (enabled) => set({ fogOfWar: enabled }),
+
+  setPlayerSlotType: (slotId, type) => set((state) => ({
+    playerSlots: state.playerSlots.map(slot =>
+      slot.id === slotId ? { ...slot, type } : slot
+    ),
+  })),
+
+  setPlayerSlotFaction: (slotId, faction) => set((state) => ({
+    playerSlots: state.playerSlots.map(slot =>
+      slot.id === slotId ? { ...slot, faction } : slot
+    ),
+  })),
+
+  setPlayerSlotColor: (slotId, colorId) => set((state) => {
+    // Check if color is already in use by another player
+    const currentSlot = state.playerSlots.find(s => s.id === slotId);
+    const otherSlot = state.playerSlots.find(s => s.id !== slotId && s.colorId === colorId);
+
+    if (otherSlot && currentSlot) {
+      // Swap colors between the two slots to maintain uniqueness
+      return {
+        playerSlots: state.playerSlots.map(slot => {
+          if (slot.id === slotId) return { ...slot, colorId };
+          if (slot.id === otherSlot.id) return { ...slot, colorId: currentSlot.colorId };
+          return slot;
+        }),
+      };
+    }
+
+    // No conflict, just set the color
+    return {
+      playerSlots: state.playerSlots.map(slot =>
+        slot.id === slotId ? { ...slot, colorId } : slot
+      ),
+    };
+  }),
+
+  setPlayerSlotAIDifficulty: (slotId, difficulty) => set((state) => ({
+    playerSlots: state.playerSlots.map(slot =>
+      slot.id === slotId ? { ...slot, aiDifficulty: difficulty } : slot
+    ),
+  })),
+
+  setPlayerSlotName: (slotId, name) => set((state) => ({
+    playerSlots: state.playerSlots.map(slot =>
+      slot.id === slotId ? { ...slot, name } : slot
+    ),
+  })),
+
+  setPlayerSlotTeam: (slotId, team) => set((state) => ({
+    playerSlots: state.playerSlots.map(slot =>
+      slot.id === slotId ? { ...slot, team } : slot
+    ),
+  })),
+
+  addPlayerSlot: () => set((state) => {
+    if (state.playerSlots.length >= 8) return state;
+
+    // Find used colors and IDs
+    const usedColors = new Set(state.playerSlots.map(s => s.colorId));
+    const usedIds = new Set(state.playerSlots.map(s => s.id));
+
+    // Find next available color
+    const availableColor = PLAYER_COLORS.find(c => !usedColors.has(c.id))?.id ?? 'blue';
+
+    // Find next available player number (1-8)
+    let playerNumber = 1;
+    while (usedIds.has(`player${playerNumber}`) && playerNumber <= 8) {
+      playerNumber++;
+    }
+
+    const newSlot: PlayerSlot = {
+      id: `player${playerNumber}`,
+      type: 'ai',
+      faction: 'dominion',
+      colorId: availableColor,
+      aiDifficulty: 'medium',
+      name: `Player ${playerNumber}`,
+      team: 0, // FFA by default
+    };
+
+    return { playerSlots: [...state.playerSlots, newSlot] };
+  }),
+
+  removePlayerSlot: (slotId) => set((state) => ({
+    playerSlots: state.playerSlots.filter(slot => slot.id !== slotId),
+  })),
+
+  fillOpenSlotWithGuest: (guestName: string): string | null => {
+    const state = get();
+    const openSlot = state.playerSlots.find(s => s.type === 'open');
+    if (!openSlot) return null;
+
+    set((state) => ({
+      playerSlots: state.playerSlots.map(slot =>
+        slot.id === openSlot.id
+          ? { ...slot, type: 'human' as PlayerType, isGuest: true, guestName, name: guestName }
+          : slot
+      ),
+    }));
+    return openSlot.id;
+  },
+
+  removeGuest: (slotId: string): void => {
+    set((state) => ({
+      playerSlots: state.playerSlots.map(slot =>
+        slot.id === slotId && slot.isGuest
+          ? { ...slot, type: 'open' as PlayerType, isGuest: false, guestName: undefined, name: `Player ${slot.id.replace('player', '')}` }
+          : slot
+      ),
+    }));
+  },
+
+  getPlayerColorHex: (playerId: string): number => {
+    const slot = get().playerSlots.find(s => s.id === playerId);
+    if (slot) {
+      return getColorHex(slot.colorId);
+    }
+    return 0x808080; // Default gray
+  },
+
+  // Player type helpers
+  isHumanPlayer: (playerId: string): boolean => {
+    const slot = get().playerSlots.find(s => s.id === playerId);
+    return slot?.type === 'human';
+  },
+
+  isAIPlayer: (playerId: string): boolean => {
+    const slot = get().playerSlots.find(s => s.id === playerId);
+    return slot?.type === 'ai';
+  },
+
+  getLocalPlayerId: (): string | null => {
+    return get().localPlayerId;
+  },
+
+  getAIPlayerIds: (): string[] => {
+    const aiIds = get().playerSlots.filter(s => s.type === 'ai').map(s => s.id);
+    debugInitialization.log(`[gameSetupStore] getAIPlayerIds called, returning: ${aiIds.join(', ')}`);
+    return aiIds;
+  },
+
+  getHumanPlayerIds: (): string[] => {
+    return get().playerSlots.filter(s => s.type === 'human').map(s => s.id);
+  },
+
+  startGame: (overrideLocalPlayerId?: string) => {
+    const state = get();
+    // Use override if provided (for multiplayer guests), otherwise find first human player
+    let localPlayerId: string | null;
+    if (overrideLocalPlayerId) {
+      localPlayerId = overrideLocalPlayerId;
+    } else {
+      const firstHumanSlot = state.playerSlots.find(s => s.type === 'human');
+      localPlayerId = firstHumanSlot?.id ?? null;
+    }
+    set({
+      gameStarted: true,
+      localPlayerId,
+    });
+  },
+
+  setLocalPlayerId: (playerId: string | null) => {
+    set({ localPlayerId: playerId });
+  },
+  startBattleSimulator: () => {
+    set({
+      gameStarted: true,
+      isBattleSimulator: true,
+      fogOfWar: false,
+      localPlayerId: 'player1',
+      selectedMapId: 'battle_arena', // Use simple arena map
+      // Set up two empty teams for simulator
+      playerSlots: [
+        { id: 'player1', type: 'human', faction: 'dominion', colorId: 'blue', aiDifficulty: 'medium', name: 'Team 1', team: 1 },
+        { id: 'player2', type: 'human', faction: 'dominion', colorId: 'red', aiDifficulty: 'medium', name: 'Team 2', team: 2 },
+      ],
+    });
+  },
+  endGame: () => set({ gameStarted: false, isBattleSimulator: false, customMapData: null, isEditorPreview: false }),
+  reset: () => set({ ...initialState, playerSlots: [...defaultPlayerSlots], localPlayerId: 'player1', customMapData: null, isEditorPreview: false }),
+  clearEditorPreviewState: () => {
+    if (typeof window !== 'undefined') {
+      removeLargeData('voidstrike_editor_map_data');
+    }
+    set({ editorMapData: null, isEditorPreview: false });
+  },
+
+  isSpectator: (): boolean => {
+    // Check if there's no local player (all players are AI)
+    const state = get();
+    return state.localPlayerId === null || !state.playerSlots.some(s => s.type === 'human');
+  },
+
+  getLocalPlayerSlot: (): number => {
+    const state = get();
+    if (!state.localPlayerId) return 1; // Default to slot 1 if spectating
+    // Extract slot number from player ID (e.g., 'player1' -> 1, 'player2' -> 2)
+    const match = state.localPlayerId.match(/player(\d+)/);
+    return match ? parseInt(match[1], 10) : 1;
+  },
+
+  enableSpectatorMode: (): void => {
+    set({ localPlayerId: null });
+    debugInitialization.log('[gameSetupStore] Spectator mode enabled - player can now spectate the game');
+  },
+}));
+
+// Export a function to get player color that can be used outside React
+export function getPlayerColor(playerId: string): number {
+  return useGameSetupStore.getState().getPlayerColorHex(playerId);
+}
+
+// Export utility functions for use outside React components
+export function getLocalPlayerId(): string | null {
+  return useGameSetupStore.getState().localPlayerId;
+}
+
+export function isLocalPlayer(playerId: string): boolean {
+  return useGameSetupStore.getState().localPlayerId === playerId;
+}
+
+export function isHumanPlayer(playerId: string): boolean {
+  return useGameSetupStore.getState().isHumanPlayer(playerId);
+}
+
+export function isAIPlayer(playerId: string): boolean {
+  return useGameSetupStore.getState().isAIPlayer(playerId);
+}
+
+export function getAIPlayerIds(): string[] {
+  return useGameSetupStore.getState().getAIPlayerIds();
+}
+
+export function isSpectatorMode(): boolean {
+  return useGameSetupStore.getState().isSpectator();
+}
+
+export function isBattleSimulatorMode(): boolean {
+  return useGameSetupStore.getState().isBattleSimulator;
+}
+
+export function getCustomMapData(): MapData | null {
+  return useGameSetupStore.getState().customMapData;
+}
+
+/**
+ * Get editor map data synchronously (in-memory only).
+ * Use getEditorMapDataAsync for persisted data.
+ */
+export function getEditorMapData(): EditorMapData | null {
+  return useGameSetupStore.getState().editorMapData;
+}
+
+/**
+ * Load editor map data from IndexedDB storage.
+ * Call this on page load to restore editor state after navigation.
+ */
+export async function loadEditorMapDataFromStorage(): Promise<EditorMapData | null> {
+  // First check in-memory state
+  const inMemory = useGameSetupStore.getState().editorMapData;
+  if (inMemory) return inMemory;
+
+  // Load from IndexedDB (for page navigation case)
+  if (typeof window !== 'undefined') {
+    const result = await getLargeData<EditorMapData>('voidstrike_editor_map_data');
+    if (result.success && result.data) {
+      // Restore to in-memory state
+      useGameSetupStore.setState({ editorMapData: result.data });
+      return result.data;
+    }
+  }
+  return null;
+}
+
+export function enableSpectatorMode(): void {
+  useGameSetupStore.getState().enableSpectatorMode();
+}
+
+/**
+ * Returns true if there are multiple human players (true multiplayer mode).
+ * Used to disable debug features in competitive play.
+ */
+export function isMultiplayerMode(): boolean {
+  const humanPlayerIds = useGameSetupStore.getState().getHumanPlayerIds();
+  return humanPlayerIds.length > 1;
+}

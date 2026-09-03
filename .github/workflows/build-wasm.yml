@@ -1,0 +1,84 @@
+name: Build WASM Boids
+
+# Manual trigger only - run this when you update wasm/boids/ source
+# Pre-compiled WASM is committed to public/wasm/ for Vercel deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_artifacts:
+        description: 'Commit built WASM to repository'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build:
+    name: Build WASM with SIMD
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wasm/boids -> target
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+
+      - name: Build WASM with SIMD
+        working-directory: wasm/boids
+        run: |
+          RUSTFLAGS="-C target-feature=+simd128" wasm-pack build \
+            --target web \
+            --release \
+            --out-dir pkg \
+            --out-name boids_wasm
+
+      - name: Copy WASM artifacts
+        run: |
+          mkdir -p public/wasm
+          cp wasm/boids/pkg/boids_wasm_bg.wasm public/wasm/
+          cp wasm/boids/pkg/boids_wasm.js public/wasm/
+          cp wasm/boids/pkg/boids_wasm.d.ts public/wasm/ 2>/dev/null || true
+
+      - name: Display WASM size
+        run: |
+          echo "WASM binary size:"
+          ls -lh public/wasm/boids_wasm_bg.wasm
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-boids
+          path: public/wasm/
+          retention-days: 30
+
+      - name: Commit WASM artifacts
+        if: ${{ inputs.commit_artifacts }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/wasm/
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: Update WASM boids module"
+            # Pull with rebase to incorporate any new commits, then push
+            # Retry up to 3 times in case of concurrent pushes
+            for i in 1 2 3; do
+              git pull --rebase origin ${{ github.ref_name }} && git push && break
+              echo "Push attempt $i failed, retrying..."
+              sleep 2
+            done
+          fi

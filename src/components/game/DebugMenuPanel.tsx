@@ -1,0 +1,242 @@
+'use client';
+
+import React, { memo } from 'react';
+import { useUIStore, DebugSettings } from '@/store/uiStore';
+import { BasePanel } from './BasePanel';
+
+interface DebugSettingInfo {
+  key: keyof DebugSettings;
+  label: string;
+}
+
+const renderingSettings: DebugSettingInfo[] = [
+  { key: 'debugAnimation', label: '애니메이션' },
+  { key: 'debugMesh', label: '메쉬 / 지오메트리' },
+  { key: 'debugTerrain', label: '지형' },
+  { key: 'debugShaders', label: '셰이더' },
+  { key: 'debugPostProcessing', label: '후처리' },
+];
+
+const gameplaySettings: DebugSettingInfo[] = [
+  { key: 'debugBuildingPlacement', label: '건물 배치' },
+  { key: 'debugCombat', label: '전투' },
+  { key: 'debugResources', label: '자원' },
+  { key: 'debugProduction', label: '생산' },
+  { key: 'debugSpawning', label: '스폰' },
+];
+
+const systemSettings: DebugSettingInfo[] = [
+  { key: 'debugAI', label: 'AI' },
+  { key: 'debugPathfinding', label: '경로 탐색' },
+  { key: 'debugNetworking', label: '네트워크' },
+  { key: 'debugPerformance', label: '성능' },
+];
+
+const otherSettings: DebugSettingInfo[] = [
+  { key: 'debugAssets', label: '자산 로딩' },
+  { key: 'debugInitialization', label: '초기화' },
+  { key: 'debugAudio', label: '오디오' },
+];
+
+const sectionStyle: React.CSSProperties = { marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid #333' };
+const labelStyle: React.CSSProperties = { fontSize: '11px', color: '#888' };
+
+// Extracted toggle button component
+function ToggleButton({ enabled, onClick, small = false }: { enabled: boolean; onClick: () => void; small?: boolean }) {
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{
+        padding: small ? '2px 8px' : '4px 12px',
+        backgroundColor: enabled ? '#2a5a2a' : '#5a2a2a',
+        border: 'none',
+        borderRadius: '4px',
+        color: 'white',
+        cursor: 'pointer',
+        fontSize: small ? '10px' : '11px',
+        minWidth: small ? '40px' : '50px',
+      }}
+    >
+      {enabled ? 'ON' : 'OFF'}
+    </button>
+  );
+}
+
+// Extracted setting row component
+function SettingRow({
+  setting,
+  enabled,
+  onToggle
+}: {
+  setting: DebugSettingInfo;
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+      <span style={{ fontSize: '12px' }}>{setting.label}</span>
+      <ToggleButton enabled={enabled} onClick={onToggle} small />
+    </div>
+  );
+}
+
+// Section header component
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '12px', color: '#aaa' }}>
+      {title}
+    </div>
+  );
+}
+
+/**
+ * In-game debug menu panel
+ * Access via Options menu -> Debug
+ * Controls which debug logging categories are enabled
+ * NOTE: Edge scrolling is now controlled centrally by HUD.tsx via isAnyMenuOpen selector
+ * PERF: Wrapped in memo to prevent unnecessary re-renders
+ */
+export const DebugMenuPanel = memo(function DebugMenuPanel() {
+  const showDebugMenu = useUIStore((state) => state.showDebugMenu);
+  const debugSettings = useUIStore((state) => state.debugSettings);
+  const toggleDebugMenu = useUIStore((state) => state.toggleDebugMenu);
+  const toggleDebugSetting = useUIStore((state) => state.toggleDebugSetting);
+  const setAllDebugSettings = useUIStore((state) => state.setAllDebugSettings);
+
+  if (!showDebugMenu) return null;
+
+  // Count enabled settings
+  const enabledCount = Object.values(debugSettings).filter(Boolean).length - (debugSettings.debugEnabled ? 1 : 0);
+  const totalSettings = Object.keys(debugSettings).length - 1; // Exclude master toggle
+
+  const handleToggleSetting = (key: keyof DebugSettings) => {
+    toggleDebugSetting(key);
+  };
+
+  return (
+    <BasePanel
+      title="디버그 메뉴"
+      onClose={toggleDebugMenu}
+      minWidth={280}
+      width={undefined}
+      fontFamily="monospace"
+      backgroundColor="rgba(0, 0, 0, 0.95)"
+      borderColor="#444"
+      showHeaderBorder={false}
+      testId="debug-menu-panel"
+    >
+      {/* === MASTER TOGGLE === */}
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <span style={{ fontWeight: 'bold' }}>Debug Logging (Master)</span>
+          <ToggleButton
+            enabled={debugSettings.debugEnabled}
+            onClick={() => handleToggleSetting('debugEnabled')}
+          />
+        </div>
+        <div style={labelStyle as React.CSSProperties}>
+          {enabledCount}/{totalSettings} categories enabled
+        </div>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              setAllDebugSettings(true);
+            }}
+            style={{
+              flex: 1,
+              padding: '4px 8px',
+              backgroundColor: '#2a4a5a',
+              border: 'none',
+              borderRadius: '4px',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: '10px',
+            }}
+          >
+            Enable All
+          </button>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              setAllDebugSettings(false);
+            }}
+            style={{
+              flex: 1,
+              padding: '4px 8px',
+              backgroundColor: '#4a3a3a',
+              border: 'none',
+              borderRadius: '4px',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: '10px',
+            }}
+          >
+            Disable All
+          </button>
+        </div>
+      </div>
+
+      {/* === RENDERING === */}
+      <div style={sectionStyle}>
+        <SectionHeader title="렌더링" />
+        {renderingSettings.map((setting) => (
+          <SettingRow
+            key={setting.key}
+            setting={setting}
+            enabled={debugSettings[setting.key] as boolean}
+            onToggle={() => handleToggleSetting(setting.key)}
+          />
+        ))}
+      </div>
+
+      {/* === GAMEPLAY === */}
+      <div style={sectionStyle}>
+        <SectionHeader title="게임플레이" />
+        {gameplaySettings.map((setting) => (
+          <SettingRow
+            key={setting.key}
+            setting={setting}
+            enabled={debugSettings[setting.key] as boolean}
+            onToggle={() => handleToggleSetting(setting.key)}
+          />
+        ))}
+      </div>
+
+      {/* === SYSTEMS === */}
+      <div style={sectionStyle}>
+        <SectionHeader title="시스템" />
+        {systemSettings.map((setting) => (
+          <SettingRow
+            key={setting.key}
+            setting={setting}
+            enabled={debugSettings[setting.key] as boolean}
+            onToggle={() => handleToggleSetting(setting.key)}
+          />
+        ))}
+      </div>
+
+      {/* === OTHER === */}
+      <div style={{ marginBottom: '8px' }}>
+        <SectionHeader title="기타" />
+        {otherSettings.map((setting) => (
+          <SettingRow
+            key={setting.key}
+            setting={setting}
+            enabled={debugSettings[setting.key] as boolean}
+            onToggle={() => handleToggleSetting(setting.key)}
+          />
+        ))}
+      </div>
+
+      {/* Info */}
+      <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #333', fontSize: '10px', color: '#666' }}>
+        Debug logs appear in browser console (F12)
+      </div>
+    </BasePanel>
+  );
+});

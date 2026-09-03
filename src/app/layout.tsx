@@ -1,0 +1,48 @@
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
+import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
+
+export const metadata: Metadata = {
+  title: 'VOIDSTRIKE - 브라우저 RTS',
+  description:
+    '브라우저에서 동작하는 경쟁 실시간 전략 게임. 군대를 지휘하고 자원을 채굴하며 전장을 지배하세요.',
+  keywords: ['RTS', '전략', '게임', '브라우저', '멀티플레이어', '경쟁'],
+  icons: {
+    icon: [
+      { url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512x512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/icon-192x192.png', sizes: '192x192', type: 'image/png' }],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'VOIDSTRIKE',
+  },
+  applicationName: 'VOIDSTRIKE',
+};
+
+export const viewport: Viewport = {
+  themeColor: '#0a0015',
+  colorScheme: 'dark',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="ko" className="dark">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@400;500;600;700;800;900&display=swap"
+          rel="stylesheet"
+        />
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+      </head>
+      <body className="font-sans bg-black text-white antialiased">
+        <ServiceWorkerRegistrar />
+        {children}
+      </body>
+    </html>
+  );
+}

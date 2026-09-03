@@ -1,0 +1,129 @@
+{
+  "$schema": "./collision.config.schema.json",
+  "_description": "Unit collision and separation configuration - RTS-style: allow overlap while moving, gentle spreading when stopped",
+
+  "separation": {
+    "_description": "Separation force parameters - RTS style: weak forces, allow significant overlap",
+
+    "multiplier": 1.0,
+    "_multiplier_description": "Separation distance = (radius1 + radius2) * multiplier. 1.0 = units touch edges. RTS games typically allow overlap.",
+
+    "queryRadiusMultiplier": 2.0,
+    "_queryRadiusMultiplier_description": "Spatial query radius = unit's collision radius * this value.",
+
+    "strengthMoving": 0.15,
+    "_strengthMoving_description": "Separation while moving. Very weak - allows extreme clumping during movement.",
+
+    "strengthIdle": 1.2,
+    "_strengthIdle_description": "Separation when idle. Increased to prevent clustering after combat.",
+
+    "strengthArriving": 1.0,
+    "_strengthArriving_description": "Separation at destination. Gentle spread, not sudden explosion.",
+
+    "strengthCombat": 0.1,
+    "_strengthCombat_description": "Separation during combat. Near-zero so units stack tightly like SC2 while fighting.",
+
+    "maxForce": 2.0,
+    "_maxForce_description": "Maximum separation force. Low cap prevents jerky movement.",
+
+    "flyingMultiplier": 1.2,
+    "_flyingMultiplier_description": "Flying unit separation multiplier. Slightly stronger for air units."
+  },
+
+  "physics": {
+    "_description": "Physics pushing - only for hard overlaps, should be rare",
+
+    "pushRadius": 0.8,
+    "_pushRadius_description": "Distance for physics push. Smaller = only push when really overlapping.",
+
+    "pushStrength": 1.5,
+    "_pushStrength_description": "Push force. Gentle - slide apart, don't bounce.",
+
+    "pushFalloff": 0.8,
+    "_pushFalloff_description": "How quickly push falls off. Higher = faster falloff, less bouncy.",
+
+    "overlapPush": 3.0,
+    "_overlapPush_description": "Extra push when overlapping. Much gentler than before."
+  },
+
+  "idle": {
+    "_description": "Idle behavior - RTS style: only spread when really overlapping, very slowly",
+
+    "separationThreshold": 0.5,
+    "_separationThreshold_description": "Minimum force to move idle unit. High = ignore small overlaps, feel settled.",
+
+    "repelSpeedMultiplier": 0.12,
+    "_repelSpeedMultiplier_description": "Speed for idle spreading. Very slow = smooth, not jittery.",
+
+    "settleThreshold": 0.85,
+    "_settleThreshold_description": "Units stop adjusting when at this fraction of ideal separation distance."
+  },
+
+  "combat": {
+    "_description": "Combat movement - minimal spreading, focus on attacking",
+
+    "spreadSpeedMultiplier": 0.1,
+    "_spreadSpeedMultiplier_description": "Speed when spreading in combat. Very slow - SC2 units barely move while attacking.",
+
+    "separationThreshold": 0.8,
+    "_separationThreshold_description": "High threshold - only spread when severely overlapping. Most combat units stay put."
+  },
+
+  "arrival": {
+    "_description": "Arrival spreading - gentle fan-out at destination",
+
+    "spreadRadius": 3.0,
+    "_spreadRadius_description": "Distance where arrival spreading kicks in. Smaller = spread closer to target.",
+
+    "spreadStrength": 1.2,
+    "_spreadStrength_description": "Arrival spread multiplier. Gentle boost, not explosion."
+  },
+
+  "defaults": {
+    "_description": "Default collision radius when not in assets.json",
+
+    "groundUnitRadius": 0.5,
+    "_groundUnitRadius_description": "Default ground unit radius.",
+
+    "flyingUnitRadius": 0.4,
+    "_flyingUnitRadius_description": "Default flying unit radius."
+  },
+
+  "buildingAvoidance": {
+    "_description": "Building avoidance - ONLY used for flying units or when crowd unavailable. Ground units using crowd trust the navmesh.",
+
+    "strength": 3.0,
+    "_strength_description": "Base avoidance force. Lower than before since navmesh handles most routing now.",
+
+    "hardMargin": 0.3,
+    "_hardMargin_description": "Hard collision margin around buildings (world units). Wider to prevent clipping.",
+
+    "softMargin": 1.0,
+    "_softMargin_description": "Soft avoidance zone for early steering (world units). Wider for smoother turning.",
+
+    "predictionLookahead": 0.3,
+    "_predictionLookahead_description": "How far ahead to predict collisions (seconds). Longer for earlier reaction.",
+
+    "predictiveStrengthMultiplier": 0.2,
+    "_predictiveStrengthMultiplier_description": "Predictive avoidance strength as fraction of base. Lower = less orbiting."
+  },
+
+  "stuck": {
+    "_description": "Stuck detection and resolution - helps units escape when blocked. Less aggressive with navmesh routing.",
+
+    "detectionFrames": 30,
+    "_detectionFrames_description": "Frames of no movement before unit is considered stuck. Longer to avoid false positives.",
+
+    "velocityThreshold": 0.05,
+    "_velocityThreshold_description": "Speed below which unit might be stuck. Lower threshold for more accurate detection.",
+
+    "nudgeStrength": 1.5,
+    "_nudgeStrength_description": "Force applied to nudge stuck units. Gentler since navmesh handles most routing.",
+
+    "minDistanceToTarget": 1.5,
+    "_minDistanceToTarget_description": "Don't apply stuck detection if closer than this to target. Wider to prevent false nudges at destination.",
+
+    "tangentialBias": 0.5,
+    "_tangentialBias_description": "How much to nudge tangentially vs toward target. Lower = more toward target, avoids random walks."
+  }
+}

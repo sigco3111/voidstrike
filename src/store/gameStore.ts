@@ -1,0 +1,481 @@
+import { create } from 'zustand';
+import { UpgradeEffect } from '@/data/research/dominion';
+import { calculateWallLine, calculateWallLineCost } from '@/data/buildings/walls';
+import { Game } from '@/engine/core/Game';
+import { getLocalPlayerId } from '@/store/gameSetupStore';
+import { clamp } from '@/utils/math';
+
+export interface ResearchedUpgrade {
+  id: string;
+  effects: UpgradeEffect[];
+  completedAt: number; // game time when completed
+}
+
+// Queued building placement for shift-click building chains
+export interface QueuedBuildingPlacement {
+  buildingType: string;
+  x: number;
+  y: number;
+}
+
+// Wall line placement for drag-to-build walls
+export interface WallLineState {
+  isActive: boolean;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  positions: Array<{ x: number; y: number }>;
+  totalCost: { minerals: number; plasma: number };
+}
+
+// Command targeting mode for move/attack/patrol
+export type CommandTargetMode = 'move' | 'attack' | 'patrol' | null;
+
+export interface GameState {
+  // Loading state
+  isGameReady: boolean;
+
+  // Resources
+  minerals: number;
+  plasma: number;
+  supply: number;
+  maxSupply: number;
+
+  // Selection
+  selectedUnits: number[];
+  controlGroups: Map<number, number[]>;
+
+  // Game state
+  gameTime: number;
+  isPaused: boolean;
+  gameSpeed: number;
+
+  // Player info
+  playerId: string;
+  faction: string;
+
+  // Research
+  researchedUpgrades: Map<string, ResearchedUpgrade>; // playerId -> upgrades
+
+  // UI state
+  isBuilding: boolean;
+  buildingType: string | null;
+  buildingPlacementQueue: QueuedBuildingPlacement[]; // Shift-click queued placements
+  isWallPlacementMode: boolean; // Wall line drawing mode
+  wallLine: WallLineState; // Current wall line being drawn
+  isSettingRallyPoint: boolean;
+  isRepairMode: boolean; // Repair targeting mode
+  isLandingMode: boolean; // Landing mode for flying buildings
+  landingBuildingId: number | null; // Building ID that is about to land
+  abilityTargetMode: string | null; // ability ID being targeted
+  commandTargetMode: CommandTargetMode; // move/attack/patrol targeting mode
+  showMinimap: boolean;
+  showResourcePanel: boolean;
+  showTechTree: boolean;
+  showKeyboardShortcuts: boolean;
+
+  // Camera
+  cameraX: number;
+  cameraY: number;
+  cameraZoom: number;
+  pendingCameraMove: { x: number; y: number } | null;
+
+  // Actions
+  selectUnits: (ids: number[]) => void;
+  addToSelection: (ids: number[]) => void;
+  removeFromSelection: (ids: number[]) => void;
+  clearSelection: () => void;
+  setControlGroup: (key: number, ids: number[]) => void;
+  getControlGroup: (key: number) => number[];
+  addResources: (minerals: number, plasma: number) => void;
+  setResources: (minerals: number, plasma: number) => void;
+  syncPlayerResources: (resources: {
+    minerals: number;
+    plasma: number;
+    supply: number;
+    maxSupply: number;
+  }) => void;
+  addSupply: (amount: number) => void;
+  addMaxSupply: (amount: number) => void;
+  setGameTime: (time: number) => void;
+  togglePause: () => void;
+  setGameSpeed: (speed: number) => void;
+  setBuildingMode: (type: string | null) => void;
+  addToBuildingQueue: (placement: QueuedBuildingPlacement) => void;
+  clearBuildingQueue: () => void;
+  setWallPlacementMode: (isActive: boolean, buildingType?: string) => void;
+  startWallLine: (x: number, y: number) => void;
+  updateWallLine: (x: number, y: number) => void;
+  finishWallLine: () => WallLineState;
+  cancelWallLine: () => void;
+  setRallyPointMode: (isActive: boolean) => void;
+  setRepairMode: (isActive: boolean) => void;
+  setLandingMode: (isActive: boolean, buildingId?: number | null) => void;
+  setAbilityTargetMode: (abilityId: string | null) => void;
+  setCommandTargetMode: (mode: CommandTargetMode) => void;
+  setCamera: (x: number, y: number, zoom?: number) => void;
+  moveCameraTo: (x: number, y: number) => void;
+  clearPendingCameraMove: () => void;
+  addResearch: (
+    playerId: string,
+    upgradeId: string,
+    effects: UpgradeEffect[],
+    completedAt: number
+  ) => void;
+  hasResearch: (playerId: string, upgradeId: string) => boolean;
+  getUpgradeBonus: (playerId: string, unitId: string, effectType: UpgradeEffect['type']) => number;
+  setShowTechTree: (show: boolean) => void;
+  setShowKeyboardShortcuts: (show: boolean) => void;
+  setGameReady: (ready: boolean) => void;
+  setPlayerId: (playerId: string) => void;
+  syncWithGameSetup: () => void;
+  reset: () => void;
+}
+
+const initialWallLine: WallLineState = {
+  isActive: false,
+  startX: 0,
+  startY: 0,
+  endX: 0,
+  endY: 0,
+  positions: [],
+  totalCost: { minerals: 0, plasma: 0 },
+};
+
+const initialState = {
+  isGameReady: false,
+  minerals: 50,
+  plasma: 0,
+  supply: 0,
+  maxSupply: 0, // Will be set from buildings when game starts
+  selectedUnits: [],
+  controlGroups: new Map<number, number[]>(),
+  gameTime: 0,
+  isPaused: false,
+  gameSpeed: 1,
+  playerId: 'player1',
+  faction: 'dominion',
+  researchedUpgrades: new Map<string, ResearchedUpgrade>(),
+  isBuilding: false,
+  buildingType: null,
+  buildingPlacementQueue: [],
+  isWallPlacementMode: false,
+  wallLine: { ...initialWallLine },
+  isSettingRallyPoint: false,
+  isRepairMode: false,
+  isLandingMode: false,
+  landingBuildingId: null,
+  abilityTargetMode: null,
+  commandTargetMode: null,
+  showMinimap: true,
+  showResourcePanel: true,
+  showTechTree: false,
+  showKeyboardShortcuts: false,
+  cameraX: 64,
+  cameraY: 64,
+  cameraZoom: 30,
+  pendingCameraMove: null,
+};
+
+export const useGameStore = create<GameState>((set, get) => ({
+  ...initialState,
+
+  selectUnits: (ids) => set({ selectedUnits: ids }),
+
+  addToSelection: (ids) =>
+    set((state) => ({
+      selectedUnits: [...new Set([...state.selectedUnits, ...ids])],
+    })),
+
+  removeFromSelection: (ids) =>
+    set((state) => ({
+      selectedUnits: state.selectedUnits.filter((id) => !ids.includes(id)),
+    })),
+
+  clearSelection: () => set({ selectedUnits: [] }),
+
+  setControlGroup: (key, ids) =>
+    set((state) => {
+      const newGroups = new Map(state.controlGroups);
+      newGroups.set(key, ids);
+      return { controlGroups: newGroups };
+    }),
+
+  getControlGroup: (key) => {
+    return get().controlGroups.get(key) || [];
+  },
+
+  addResources: (minerals, plasma) =>
+    set((state) => ({
+      minerals: Math.max(0, state.minerals + minerals),
+      plasma: Math.max(0, state.plasma + plasma),
+    })),
+
+  setResources: (minerals, plasma) =>
+    set(() => ({
+      minerals: Math.max(0, minerals),
+      plasma: Math.max(0, plasma),
+    })),
+
+  syncPlayerResources: (resources) =>
+    set(() => {
+      const maxSupply = clamp(resources.maxSupply, 0, 200);
+      return {
+        minerals: Math.max(0, resources.minerals),
+        plasma: Math.max(0, resources.plasma),
+        supply: clamp(resources.supply, 0, maxSupply),
+        maxSupply,
+      };
+    }),
+
+  addSupply: (amount) =>
+    set((state) => ({
+      supply: clamp(state.supply + amount, 0, state.maxSupply),
+    })),
+
+  addMaxSupply: (amount) =>
+    set((state) => ({
+      maxSupply: Math.min(200, state.maxSupply + amount),
+    })),
+
+  setGameTime: (time) => set({ gameTime: time }),
+
+  togglePause: () =>
+    set((state) => {
+      const newPaused = !state.isPaused;
+      // Actually pause/resume the game engine
+      try {
+        const game = Game.getInstance();
+        if (newPaused) {
+          game.pause();
+        } else {
+          game.resume();
+        }
+      } catch {
+        // Game instance might not exist yet
+      }
+      return { isPaused: newPaused };
+    }),
+
+  setGameSpeed: (speed) => set({ gameSpeed: speed }),
+
+  setBuildingMode: (type) =>
+    set((state) => ({
+      isBuilding: type !== null,
+      isWallPlacementMode: false,
+      buildingType: type,
+      isRepairMode: false,
+      isLandingMode: false,
+      landingBuildingId: null,
+      abilityTargetMode: null,
+      isSettingRallyPoint: false,
+      commandTargetMode: null,
+      // Clear queue when exiting building mode
+      buildingPlacementQueue: type === null ? [] : state.buildingPlacementQueue,
+    })),
+
+  addToBuildingQueue: (placement) =>
+    set((state) => ({
+      buildingPlacementQueue: [...state.buildingPlacementQueue, placement],
+    })),
+
+  clearBuildingQueue: () => set({ buildingPlacementQueue: [] }),
+
+  setWallPlacementMode: (isActive, buildingType = 'wall_segment') =>
+    set({
+      isWallPlacementMode: isActive,
+      isBuilding: isActive,
+      buildingType: isActive ? buildingType : null,
+      wallLine: { ...initialWallLine },
+      isSettingRallyPoint: false,
+      isRepairMode: false,
+      isLandingMode: false,
+      landingBuildingId: null,
+      abilityTargetMode: null,
+      commandTargetMode: null,
+    }),
+
+  startWallLine: (x, y) =>
+    set((state) => ({
+      wallLine: {
+        ...state.wallLine,
+        isActive: true,
+        startX: x,
+        startY: y,
+        endX: x,
+        endY: y,
+        positions: [{ x: Math.round(x), y: Math.round(y) }],
+        totalCost: { minerals: 25, plasma: 0 }, // Cost of one segment
+      },
+    })),
+
+  updateWallLine: (x, y) =>
+    set((state) => {
+      if (!state.wallLine.isActive) return state;
+
+      const positions = calculateWallLine(state.wallLine.startX, state.wallLine.startY, x, y);
+      const totalCost = calculateWallLineCost(positions, state.buildingType || 'wall_segment');
+
+      return {
+        wallLine: {
+          ...state.wallLine,
+          endX: x,
+          endY: y,
+          positions,
+          totalCost,
+        },
+      };
+    }),
+
+  finishWallLine: () => {
+    const state = get();
+    const wallLine = { ...state.wallLine };
+
+    // Reset wall line state
+    set({
+      wallLine: { ...initialWallLine },
+    });
+
+    return wallLine;
+  },
+
+  cancelWallLine: () =>
+    set({
+      wallLine: { ...initialWallLine },
+      isWallPlacementMode: false,
+      isBuilding: false,
+      buildingType: null,
+    }),
+
+  setRallyPointMode: (isActive) =>
+    set({
+      isSettingRallyPoint: isActive,
+      isBuilding: false,
+      buildingType: null,
+      isRepairMode: false,
+      isLandingMode: false,
+      landingBuildingId: null,
+      abilityTargetMode: null,
+      commandTargetMode: null,
+    }),
+
+  setRepairMode: (isActive) =>
+    set({
+      isRepairMode: isActive,
+      isBuilding: false,
+      buildingType: null,
+      isSettingRallyPoint: false,
+      isLandingMode: false,
+      landingBuildingId: null,
+      abilityTargetMode: null,
+      commandTargetMode: null,
+    }),
+
+  setLandingMode: (isActive, buildingId = null) =>
+    set({
+      isLandingMode: isActive,
+      landingBuildingId: isActive ? (buildingId ?? null) : null,
+      isBuilding: false,
+      buildingType: null,
+      isSettingRallyPoint: false,
+      isRepairMode: false,
+      abilityTargetMode: null,
+      commandTargetMode: null,
+    }),
+
+  setAbilityTargetMode: (abilityId) =>
+    set({
+      abilityTargetMode: abilityId,
+      isBuilding: false,
+      buildingType: null,
+      isSettingRallyPoint: false,
+      isLandingMode: false,
+      landingBuildingId: null,
+      isRepairMode: false,
+      commandTargetMode: null,
+    }),
+
+  setCommandTargetMode: (mode) =>
+    set({
+      commandTargetMode: mode,
+      isBuilding: false,
+      buildingType: null,
+      isSettingRallyPoint: false,
+      isLandingMode: false,
+      landingBuildingId: null,
+      isRepairMode: false,
+      abilityTargetMode: null,
+    }),
+
+  setCamera: (x, y, zoom) =>
+    set((state) => ({
+      cameraX: x,
+      cameraY: y,
+      cameraZoom: zoom ?? state.cameraZoom,
+    })),
+
+  moveCameraTo: (x, y) => set({ pendingCameraMove: { x, y } }),
+
+  clearPendingCameraMove: () => set({ pendingCameraMove: null }),
+
+  addResearch: (playerId, upgradeId, effects, completedAt) =>
+    set((state) => {
+      const key = `${playerId}:${upgradeId}`;
+      const newUpgrades = new Map(state.researchedUpgrades);
+      newUpgrades.set(key, { id: upgradeId, effects, completedAt });
+      return { researchedUpgrades: newUpgrades };
+    }),
+
+  hasResearch: (playerId, upgradeId) => {
+    const key = `${playerId}:${upgradeId}`;
+    return get().researchedUpgrades.has(key);
+  },
+
+  getUpgradeBonus: (playerId, unitId, effectType) => {
+    const state = get();
+    let bonus = 0;
+
+    // Import unit types dynamically to avoid circular deps
+    const { UNIT_TYPES } = require('@/data/research/dominion');
+    const unitType = UNIT_TYPES[unitId];
+
+    for (const [key, upgrade] of state.researchedUpgrades) {
+      if (!key.startsWith(playerId + ':')) continue;
+
+      for (const effect of upgrade.effects) {
+        if (effect.type !== effectType) continue;
+
+        // Check if effect applies to this unit
+        const appliesToUnit =
+          (!effect.targets || effect.targets.length === 0 || effect.targets.includes(unitId)) &&
+          (!effect.unitTypes ||
+            effect.unitTypes.length === 0 ||
+            (unitType && effect.unitTypes.includes(unitType)));
+
+        if (appliesToUnit) {
+          bonus += effect.value;
+        }
+      }
+    }
+
+    return bonus;
+  },
+
+  setShowTechTree: (show) => set({ showTechTree: show }),
+
+  setShowKeyboardShortcuts: (show) => set({ showKeyboardShortcuts: show }),
+
+  setGameReady: (ready) => set({ isGameReady: ready }),
+
+  setPlayerId: (playerId) => set({ playerId }),
+
+  syncWithGameSetup: () => {
+    const localPlayerId = getLocalPlayerId();
+    // Set playerId to local player, or empty string if spectating
+    // This ensures we don't keep showing player1's data when spectating
+    set({ playerId: localPlayerId ?? '' });
+  },
+
+  reset: () => set(initialState),
+}));
