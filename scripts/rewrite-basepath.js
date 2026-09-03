@@ -28,7 +28,11 @@ const fs = require('fs');
 const path = require('path');
 
 const OUT_DIR = path.resolve(__dirname, '..', 'out');
-const BASE = '/voidstrike';
+// Base path must mirror the deployment target:
+// - GitHub Pages subpath (e.g. /voidstrike/) → '/voidstrike'
+// - Vercel root domain                  → ''
+// To redeploy on GitHub Pages, change this back to '/voidstrike'.
+const BASE = process.env.BASE_PATH || '';
 
 // Paths the game uses that Next.js does NOT auto-prefix.
 // Listed as `/<prefix>` and matched case-sensitively at the leading slash.
@@ -88,15 +92,12 @@ function walk(dir) {
 function rewrite(file) {
   let src = fs.readFileSync(file, 'utf8');
   const original = src;
-  // Use a per-run cache buster so user HTTP caches are forced to re-fetch.
-  const buster = process.env.BUILD_ID || Date.now().toString(36);
   for (const prefix of PROTECTED_PREFIXES) {
-    // Pattern: replace /prefix/... with /voidstrike/prefix/...?v=<buster>
-    // Skip if already preceded by /voidstrike (no double-prefix).
-    // The lookbehind ensures we don't touch /voidstrike/voidstrike/ or
-    // /voidstrike/anything/voidstrike/.../foo (already prefixed).
-    const re = new RegExp(`(?<![a-zA-Z0-9_/-])${escapeRegExp(prefix)}([^"'\\s\\)]*)`, 'g');
-    src = src.replace(re, (match, suffix) => `${BASE}${prefix}${suffix}${suffix.includes('?') ? '&' : '?'}v=${buster}`);
+    // Pattern: replace /prefix/... with <BASE>/prefix/...
+    // Skip if already preceded by /<BASE> (no double-prefix).
+    // Lookbehind ensures we don't touch /voidstrike/voidstrike/ etc.
+    const re = new RegExp(`(?<![a-zA-Z0-9_/-])${escapeRegExp(prefix)}`, 'g');
+    src = src.replace(re, `${BASE}${prefix}`);
   }
   if (src !== original) {
     fs.writeFileSync(file, src, 'utf8');

@@ -3,10 +3,9 @@ import './globals.css';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
 
 // basePath-aware icons — needed for Next.js metadata + manual <link> tags.
-// On GitHub Pages subpath (e.g. /voidstrike/), absolute '/icon-...' URLs
-// would 404 because the PWA Service Worker is disabled on subpath
-// deployments and our app assets live under /voidstrike/.
-const BASE_PATH = process.env.NODE_ENV === 'production' ? '/voidstrike' : '';
+// On Vercel root domain deploy, basePath is empty; on GitHub Pages subpath
+// deployments, set this to '/<repo>' before building.
+const BASE_PATH = '';
 const icon = (size: string) => `${BASE_PATH}/icon-${size}.png`;
 
 export const metadata: Metadata = {
