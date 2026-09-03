@@ -10,6 +10,7 @@
 
 import { DefinitionLoader } from './DefinitionLoader';
 import { debugAssets } from '@/utils/debugLogger';
+import { withBasePath } from '@/utils/basePath';
 import type {
   UnitDefinition,
   BuildingDefinition,
@@ -67,7 +68,7 @@ class DefinitionRegistryClass {
   /**
    * Initialize the registry from a game manifest file
    */
-  public async loadFromManifest(manifestPath: string = '/data/game.json'): Promise<void> {
+  public async loadFromManifest(manifestPath: string = withBasePath('/data/game.json')): Promise<void> {
     // Prevent double initialization
     if (this.initializing) {
       return this.initializing;
