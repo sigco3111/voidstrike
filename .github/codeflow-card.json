@@ -816,6 +816,108 @@
           "total": 546
         }
       ]
+    },
+    {
+      "at": "2026-09-03T06:35:11.572Z",
+      "sha": "cdaab8d421a0972700f5cd3a677b09b9fd733573",
+      "pr": null,
+      "actor": "sigco3111",
+      "files": 562,
+      "functions": 4129,
+      "loc": 823343,
+      "languages": 15,
+      "topLanguages": [
+        {
+          "ext": "json",
+          "pct": 73,
+          "lines": 600533
+        },
+        {
+          "ext": "ts",
+          "pct": 22,
+          "lines": 180974
+        },
+        {
+          "ext": "tsx",
+          "pct": 3,
+          "lines": 20589
+        },
+        {
+          "ext": "md",
+          "pct": 2,
+          "lines": 13932
+        },
+        {
+          "ext": "js",
+          "pct": 0,
+          "lines": 2904
+        }
+      ],
+      "dead": 155,
+      "deadPct": 3.8,
+      "circular": 1,
+      "godObjects": 1,
+      "avgCoupling": 8.2,
+      "securityIssues": 16,
+      "patterns": 9,
+      "duplicates": 44,
+      "layerViolations": 596,
+      "connections": 4623,
+      "avgFnLines": 15.6,
+      "longestFn": 16,
+      "testFiles": 87,
+      "testRatio": 15.5,
+      "topFolders": [
+        {
+          "name": "src",
+          "count": 395
+        },
+        {
+          "name": "tests",
+          "count": 89
+        },
+        {
+          "name": "public",
+          "count": 23
+        },
+        {
+          "name": "root",
+          "count": 17
+        },
+        {
+          "name": "docs",
+          "count": 15
+        }
+      ],
+      "folders": 5,
+      "grade": "F",
+      "score": 58,
+      "topBlast": {
+        "path": "src/types/three-webgpu.d.ts",
+        "direct": 239,
+        "transitive": 439,
+        "total": 678
+      },
+      "fragility": [
+        {
+          "path": "src/types/three-webgpu.d.ts",
+          "direct": 239,
+          "transitive": 439,
+          "total": 678
+        },
+        {
+          "path": "public/draco/draco_wasm_wrapper.js",
+          "direct": 126,
+          "transitive": 425,
+          "total": 551
+        },
+        {
+          "path": "src/rendering/shared/InstancedMeshPool.ts",
+          "direct": 122,
+          "transitive": 424,
+          "total": 546
+        }
+      ]
     }
   ]
 }
