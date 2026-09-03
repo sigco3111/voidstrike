@@ -14,15 +14,26 @@ export function ServiceWorkerRegistrar() {
 
   useEffect(() => {
     // Service worker registration
+    // Use basePath-aware paths so it works on GitHub Pages subpath deployments
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js', { scope: '/', updateViaCache: 'none' })
-        .then(() => {
-          setServiceWorkerReady(true);
-        })
-        .catch((error) => {
-          console.warn('[PWA] Service worker registration failed:', error);
+      const baseUrl = (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.basePath) || '';
+      // On subpath deployments (GitHub Pages), SW with wrong scope causes
+      // cascading 404s for absolute-path asset fetches. Unregister any
+      // previously-installed SW first to prevent it from intercepting requests.
+      if (baseUrl) {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          regs.forEach((reg) => reg.unregister());
         });
+      } else {
+        navigator.serviceWorker
+          .register(`${baseUrl}/sw.js`, { scope: `${baseUrl}/`, updateViaCache: 'none' })
+          .then(() => {
+            setServiceWorkerReady(true);
+          })
+          .catch((error) => {
+            console.warn('[PWA] Service worker registration failed:', error);
+          });
+      }
     }
 
     // Capture install prompt

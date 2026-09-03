@@ -1074,7 +1074,7 @@ export function LoadingScreen({ progress, status, onComplete }: LoadingScreenPro
                     textShadow: '0 0 20px rgba(160, 180, 255, 0.4)',
                   }}
                 >
-                  Initializing Combat Systems
+                  전투 시스템 초기화 중
                 </div>
               </div>
 
@@ -1087,7 +1087,7 @@ export function LoadingScreen({ progress, status, onComplete }: LoadingScreenPro
                     textShadow: '0 0 10px rgba(0, 0, 0, 0.5)',
                   }}
                 >
-                  &quot;In the void, only the prepared survive.&quot;
+                  &quot;공허에서 준비된 자만 살아남는다.&quot;
                 </p>
               </div>
             </div>

@@ -366,7 +366,7 @@ export default function GameSetupPage() {
                   </div>
 
                   <p className="text-void-500 text-[10px]">
-                    친구에게 코드를 공유하세요. 슬롯을 "열림"으로 설정하면 참가할 수 있습니다.
+                    친구에게 코드를 공유하세요. 슬롯을 &quot;열림&quot;으로 설정하면 참가할 수 있습니다.
                   </p>
 
                   {hasOpenSlot && (
