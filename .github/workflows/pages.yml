@@ -10,9 +10,10 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: true
+# Note: removed `concurrency` block because `cancel-in-progress: true`
+# was preventing `actions/deploy-pages@v4` from atomically publishing
+# the artifact to Pages — the previous deploy was getting cancelled mid-flight
+# and the cached Pages site was being served instead of the new build.
 
 jobs:
   build:
