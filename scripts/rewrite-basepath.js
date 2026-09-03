@@ -56,6 +56,17 @@ const SKIP_EXTS = new Set([
   '.ttf', '.otf', '.woff', '.woff2', '.eot',
 ]);
 
+// JavaScript chunks must NOT be rewritten — their filenames are content
+// hashes, so any modification would break the HTML→chunk reference and
+// cause Pages to serve stale chunks. The withBasePath() helper already
+// inlines /voidstrike into the chunk source directly at compile time,
+// so post-build rewriting of chunks is unnecessary AND harmful.
+const SKIP_PATHS = new Set([
+  '_next/static/chunks/',
+  '_next/static/media/',
+  '_next/static/css/',
+]);
+
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
@@ -65,6 +76,10 @@ function walk(dir) {
     } else {
       const ext = path.extname(entry.name).toLowerCase();
       if (SKIP_EXTS.has(ext)) continue;
+      // Skip Next.js chunk/media/css paths — they have content hashes
+      // in their filenames that break if we modify file contents.
+      const rel = path.relative(OUT_DIR, full);
+      if ([...SKIP_PATHS].some((p) => rel.startsWith(p))) continue;
       rewrite(full);
     }
   }
@@ -73,13 +88,15 @@ function walk(dir) {
 function rewrite(file) {
   let src = fs.readFileSync(file, 'utf8');
   const original = src;
+  // Use a per-run cache buster so user HTTP caches are forced to re-fetch.
+  const buster = process.env.BUILD_ID || Date.now().toString(36);
   for (const prefix of PROTECTED_PREFIXES) {
-    // Pattern: replace /prefix/ with /voidstrike/prefix/
+    // Pattern: replace /prefix/... with /voidstrike/prefix/...?v=<buster>
     // Skip if already preceded by /voidstrike (no double-prefix).
-    // Also skip if preceded by another basePath-like prefix (idempotent
-    // across builds). Lookbehind keeps regex O(n) and safe.
-    const re = new RegExp(`(?<![a-zA-Z0-9_/-])${escapeRegExp(prefix)}`, 'g');
-    src = src.replace(re, `${BASE}${prefix}`);
+    // The lookbehind ensures we don't touch /voidstrike/voidstrike/ or
+    // /voidstrike/anything/voidstrike/.../foo (already prefixed).
+    const re = new RegExp(`(?<![a-zA-Z0-9_/-])${escapeRegExp(prefix)}([^"'\\s\\)]*)`, 'g');
+    src = src.replace(re, (match, suffix) => `${BASE}${prefix}${suffix}${suffix.includes('?') ? '&' : '?'}v=${buster}`);
   }
   if (src !== original) {
     fs.writeFileSync(file, src, 'utf8');
