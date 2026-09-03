@@ -504,6 +504,7 @@ voidstrike/
 │   │   ├── pwa.d.ts
 │   │   └── three-webgpu.d.ts
 │   ├── utils/ # Utility functions
+│   │   ├── basePath.ts
 │   │   ├── commandIcons.ts
 │   │   ├── debugLogger.ts
 │   │   ├── DeterministicMath.ts
